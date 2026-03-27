@@ -1,0 +1,20 @@
+services:
+  container-monitor:
+    build: .
+    # image: ghcr.io/yourusername/container-monitor:latest # Uncomment when using GHCR
+    container_name: container-monitor
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # Docker API
+      - /:/hostfs:ro # Host disk stats
+      - ./data:/app/data # Persistence
+      - /opt/docker:/opt/docker # CRITICAL: Map your compose directories exactly as they exist on the host
+    environment:
+      - DATA_DIR=/app/data
+      - HOST_DISK_CHECK_FILESYSTEM=/hostfs
+      - CONTAINER_MODE=true
+      - MONITOR_INTERVAL_HOURS=6
+      - TZ=Europe/London
+      - SECRET_TOKEN=changeme123 # Web UI password

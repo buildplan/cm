@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" class="bg-gray-900 text-gray-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Container Monitor</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+</head>
+<body class="min-h-screen flex flex-col items-center p-6">
+    <div id="auth-screen" class="w-full max-w-md mt-20 bg-gray-800 p-8 rounded-xl shadow-xl border border-gray-700 hidden">
+        <h2 class="text-2xl font-bold mb-4 text-cyan-400">🔒 Authenticate</h2>
+        <input type="password" id="token-input" placeholder="Enter Secret Token" class="w-full p-3 bg-gray-900 border border-gray-600 rounded mb-4 text-white">
+        <button onclick="login()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition">Login</button>
+    </div>
+
+    <div id="app-screen" class="w-full max-w-6xl hidden">
+        <header class="flex justify-between items-center mb-8 pb-4 border-b border-gray-700">
+            <h1 class="text-3xl font-bold text-cyan-400">🐳 Container Monitor</h1>
+            <div class="space-x-4">
+                <button onclick="triggerRun()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded font-medium transition">Run Check Now</button>
+                <button onclick="logout()" class="text-gray-400 hover:text-red-400 transition">Logout</button>
+            </div>
+        </header>
+
+        <div id="dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
