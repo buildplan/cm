@@ -86,7 +86,12 @@ async function refreshDashboard() {
                             <h3 class="font-bold text-lg flex items-center gap-2 truncate" title="${name}">
                                 <span class="w-3 h-3 flex-shrink-0 rounded-full ${indicator}"></span> <span class="truncate">${name}</span>
                             </h3>
-                            <span class="text-xs text-gray-400 ml-2 px-2 py-1 bg-gray-800 rounded whitespace-nowrap">${c.Status.split(' ')[0]}</span>
+                            <div class="flex items-center gap-1 ml-2">
+                                <button onclick="controlContainer('start', '${name}')" class="text-gray-500 hover:text-green-400 px-1 transition" title="Start Container">▶</button>
+                                <button onclick="controlContainer('stop', '${name}')" class="text-gray-500 hover:text-red-400 px-1 transition" title="Stop Container">⏹</button>
+                                <button onclick="controlContainer('restart', '${name}')" class="text-gray-500 hover:text-cyan-400 px-1 transition" title="Restart Container">🔄</button>
+                                <span class="text-xs text-gray-400 ml-1 px-2 py-1 bg-gray-800 rounded whitespace-nowrap">${c.Status.split(' ')[0]}</span>
+                            </div>
                         </div>
                         ${issues.length > 0 ? `<p class="text-sm text-gray-300 mt-2"><strong>Issues:</strong> ${issues.join(", ")}</p>` : `<p class="text-sm text-gray-400 mt-2">No active issues.</p>`}
                     </div>
@@ -169,6 +174,20 @@ async function updateContainer(name, btnElement) {
     refreshDashboard();
 }
 
+async function controlContainer(action, name) {
+    if (!confirm(`Are you sure you want to ${action.toUpperCase()} ${name}?`)) return;
+    try {
+        const res = await apiFetch(`/api/containers/${action}/${name}`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok || data.exit_code !== 0) {
+            alert(`Failed to ${action} ${name}:\n` + (data.error || data.detail || "Unknown error"));
+        }
+    } catch (e) {
+        alert("Network error:\n" + e.message);
+    }
+    refreshDashboard();
+}
+
 async function updateAll() {
     if (!confirm(`Are you sure you want to update all ${pendingUpdates.length} eligible containers?`)) return;
 
@@ -224,23 +243,17 @@ function closeLogModal() {
 // --- Tab & Settings Logic ---
 
 function switchTab(tabName) {
-    const dashView = document.getElementById("dashboard-view");
-    const setView = document.getElementById("settings-view");
-    const dashTab = document.getElementById("tab-dashboard");
-    const setTab = document.getElementById("tab-settings");
-
-    if (tabName === 'dashboard') {
-        dashView.classList.remove("hidden");
-        setView.classList.add("hidden");
-        dashTab.className = "text-cyan-400 font-bold transition";
-        setTab.className = "text-gray-400 hover:text-cyan-400 transition";
-    } else {
-        dashView.classList.add("hidden");
-        setView.classList.remove("hidden");
-        setTab.className = "text-cyan-400 font-bold transition";
-        dashTab.className = "text-gray-400 hover:text-cyan-400 transition";
-        loadConfig(); // Fetch latest config when opening settings
-    }
+    const views = ["dashboard", "settings", "applogs"];
+    views.forEach(view => {
+        const isTarget = view === tabName;
+        document.getElementById(`${view}-view`).classList.toggle("hidden", !isTarget);
+        const tab = document.getElementById(`tab-${view}`);
+        tab.className = isTarget
+            ? "text-cyan-400 font-bold transition"
+            : "text-gray-400 hover:text-cyan-400 transition";
+    });
+    if (tabName === 'settings') loadConfig();
+    if (tabName === 'applogs') loadAppLogs();
 }
 
 async function loadConfig() {
@@ -283,4 +296,51 @@ async function saveConfig() {
         statusText.innerText = "❌ Network Error";
         statusText.className = "text-sm text-red-400";
     }
+}
+
+// --- App Logs & Prune Logic ---
+
+async function loadAppLogs() {
+    const logBox = document.getElementById("app-logs-content");
+    logBox.innerText = "Loading logs...";
+    try {
+        const res = await apiFetch("/api/logs");
+        const data = await res.json();
+        if (res.ok && data.lines) {
+            logBox.textContent = data.lines.join("\n") || "Log file is empty.";
+            // Auto-scroll to bottom
+            logBox.scrollTop = logBox.scrollHeight;
+        } else {
+            logBox.textContent = "Failed to load logs.";
+        }
+    } catch (e) {
+        logBox.textContent = "Network error loading logs.";
+    }
+}
+
+async function systemPrune() {
+    if (!confirm("⚠️ WARNING: This will remove ALL stopped containers, unused networks, and unused images.\n\nAre you sure you want to proceed?")) return;
+
+    const btn = document.getElementById("prune-btn");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ Pruning System...";
+    btn.disabled = true;
+
+    try {
+        const res = await apiFetch("/api/prune", { method: "POST" });
+        const data = await res.json();
+
+        if (res.ok && data.exit_code === 0) {
+            alert("System Prune Complete!\n\nOutput:\n" + data.output);
+            // Refresh dashboard to update host disk stats
+            refreshDashboard();
+        } else {
+            alert("Prune failed:\n" + (data.output || "Unknown error"));
+        }
+    } catch (e) {
+        alert("Network error during prune:\n" + e.message);
+    }
+
+    btn.innerHTML = originalText;
+    btn.disabled = false;
 }

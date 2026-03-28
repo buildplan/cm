@@ -20,6 +20,7 @@
                 <nav class="hidden md:flex space-x-6 border-l border-gray-700 pl-6">
                     <button onclick="switchTab('dashboard')" id="tab-dashboard" class="text-cyan-400 font-bold transition">Dashboard</button>
                     <button onclick="switchTab('settings')" id="tab-settings" class="text-gray-400 hover:text-cyan-400 transition">Settings</button>
+                    <button onclick="switchTab('applogs')" id="tab-applogs" class="text-gray-400 hover:text-cyan-400 transition">App Logs</button>
                 </nav>
             </div>
             <div class="space-x-4 flex items-center">
@@ -68,6 +69,23 @@
             <div class="mt-4 flex justify-between items-center">
                 <span id="config-save-status" class="text-sm text-gray-400"></span>
                 <button onclick="saveConfig()" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded transition">💾 Save Configuration</button>
+            </div>
+            <div class="mt-8 pt-6 border-t border-gray-700">
+                <h3 class="text-lg font-bold text-red-400 mb-2">🧹 System Cleanup</h3>
+                <p class="text-sm text-gray-400 mb-4">Run <code>docker system prune -a</code> to remove all stopped containers, unused networks, and dangling images. This is useful to free up disk space after updating containers.</p>
+                <button id="prune-btn" onclick="systemPrune()" class="bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-700 font-bold py-2 px-6 rounded transition">
+                    Run System Prune
+                </button>
+            </div>
+        </div>
+
+        <div id="applogs-view" class="w-full hidden bg-gray-800 rounded-xl border border-gray-700 p-6 flex flex-col h-[700px]">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-white">📜 Background Monitor Logs</h2>
+                <button onclick="loadAppLogs()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm transition">🔄 Refresh Logs</button>
+            </div>
+            <div id="app-logs-content" class="w-full flex-1 bg-black text-green-400 p-4 rounded border border-gray-700 font-mono text-sm overflow-y-auto whitespace-pre-wrap selection:bg-green-900">
+                Loading logs...
             </div>
         </div>
 

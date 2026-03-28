@@ -100,6 +100,28 @@ async def update_container(container_name: str):
 
     return {"exit_code": 0, "output": "\n".join(output_lines)}
 
+@app.post("/api/prune")
+async def prune_system():
+    proc = await asyncio.create_subprocess_exec(
+        "docker", "system", "prune", "-af",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    out, _ = await proc.communicate()
+    return {"exit_code": proc.returncode, "output": out.decode("utf-8", errors="replace")}
+
+@app.post("/api/containers/{action}/{container_name}")
+async def control_container(action: str, container_name: str):
+    if action not in ["start", "stop", "restart"]:
+        raise HTTPException(400, "Invalid action")
+    proc = await asyncio.create_subprocess_exec(
+        "docker", action, container_name,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        return {"exit_code": proc.returncode, "error": out.decode("utf-8", errors="replace")}
+    return {"exit_code": 0, "output": out.decode("utf-8", errors="replace").strip()}
+
 @app.get("/api/logs")
 async def get_monitor_log(lines: int = 200):
     if not LOG_F.exists(): return {"lines": []}
