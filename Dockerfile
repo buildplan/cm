@@ -7,7 +7,7 @@ RUN apk add --no-cache python3 py3-pip curl
 # Create a python virtual environment & install packages
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip3 install --no-cache-dir fastapi uvicorn apscheduler
+RUN pip3 install --no-cache-dir fastapi uvicorn apscheduler pyyaml
 
 # Download yq
 ARG TARGETARCH=amd64
@@ -19,8 +19,7 @@ FROM alpine:3.23
 
 # Install runtime dependencies
 RUN apk add --no-cache \
-    bash jq skopeo curl gawk coreutils docker-cli docker-cli-compose tzdata \
-    python3 py3-yaml
+    bash jq skopeo curl gawk coreutils docker-cli docker-cli-compose tzdata python3
 
 # Copy the virtual environment and yq from the builder stage
 COPY --from=builder /opt/venv /opt/venv
