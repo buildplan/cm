@@ -43,11 +43,22 @@ async function showApp() {
 
 async function refreshDashboard() {
     try {
-        const [dockerRes, stateRes] = await Promise.all([
-            apiFetch("/api/containers"), apiFetch("/api/state")
+        const [dockerRes, stateRes, statsRes] = await Promise.all([
+            apiFetch("/api/containers"), 
+            apiFetch("/api/state"),
+            apiFetch("/api/host-stats")
         ]);
         const dockerList = await dockerRes.json();
-        const state = await stateRes.json();
+        const state = await stateRes.json();        
+        if (statsRes.ok) {
+            const stats = await statsRes.json();
+            document.getElementById("stat-cpu").innerText = stats.cpu_load;
+            document.getElementById("stat-mem").innerText = stats.memory.percent;
+            document.getElementById("stat-mem-detail").innerText = `${stats.memory.used} / ${stats.memory.total}`;
+            document.getElementById("stat-disk").innerText = stats.disk.percent;
+            document.getElementById("stat-disk-detail").innerText = `${stats.disk.used} / ${stats.disk.size}`;
+            document.getElementById("stat-disk-fs").innerText = stats.disk.fs;
+        }
         const issueMap = state.container_issues ?? {};
         const updateCache = state.updates ?? {};
         pendingUpdates = [];

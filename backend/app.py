@@ -116,7 +116,6 @@ async def update_config(data: ConfigUpdate):
         yaml.safe_load(data.yaml_text)
     except yaml.YAMLError as e:
         raise HTTPException(400, f"Invalid YAML format: {e}")
-    
     CONFIG_F.write_text(data.yaml_text)
     return {"status": "saved"}
 
@@ -124,6 +123,37 @@ async def update_config(data: ConfigUpdate):
 async def get_container_logs(container_name: str):
     code, out = await run_script("--logs", container_name)
     return {"output": out}
+
+@app.get("/api/host-stats")
+async def get_host_stats():
+    fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
+    disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
+    try:
+        disk_cmd = subprocess.run(["df", "-Ph", fs], capture_output=True, text=True)
+        disk_lines = disk_cmd.stdout.strip().split("\n")
+        if len(disk_lines) > 1:
+            parts = disk_lines[1].split()
+            if len(parts) >= 5:
+                disk_info = {"size": parts[1], "used": parts[2], "percent": parts[4], "fs": fs}
+    except Exception: pass
+    mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
+    try:
+        mem_cmd = subprocess.run(["free", "-m"], capture_output=True, text=True)
+        mem_lines = mem_cmd.stdout.strip().split("\n")
+        if len(mem_lines) > 1:
+            parts = mem_lines[1].split()
+            if len(parts) >= 3:
+                total = int(parts[1])
+                used = int(parts[2])
+                percent = int((used / total) * 100) if total > 0 else 0
+                mem_info = {"total": f"{total}MB", "used": f"{used}MB", "percent": f"{percent}%"}
+    except Exception: pass
+    cpu_load = "0.00"
+    try:
+        with open("/proc/loadavg", "r") as f:
+            cpu_load = f.read().split()[0]
+    except Exception: pass
+    return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
 
 # --- Serve Frontend ---
 app.mount("/", StaticFiles(directory="/app/frontend", html=True), name="frontend")

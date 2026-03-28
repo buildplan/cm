@@ -29,8 +29,37 @@
             </div>
         </header>
 
-        <div id="dashboard-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div id="host-stats-bar" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex items-center justify-between shadow-sm">
+                <div>
+                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Host CPU Load (1m)</p>
+                    <p id="stat-cpu" class="text-2xl font-bold text-cyan-400 mt-1">--</p>
+                </div>
+                <div class="text-4xl opacity-80">⚙️</div>
             </div>
+            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex items-center justify-between shadow-sm">
+                <div>
+                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Host Memory</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <p id="stat-mem" class="text-2xl font-bold text-cyan-400">--</p>
+                        <p id="stat-mem-detail" class="text-xs text-gray-500">-- / --</p>
+                    </div>
+                </div>
+                <div class="text-4xl opacity-80">🧠</div>
+            </div>
+            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex items-center justify-between shadow-sm">
+                <div>
+                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Host Disk (<span id="stat-disk-fs">/</span>)</p>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <p id="stat-disk" class="text-2xl font-bold text-cyan-400">--</p>
+                        <p id="stat-disk-detail" class="text-xs text-gray-500">-- / --</p>
+                    </div>
+                </div>
+                <div class="text-4xl opacity-80">💾</div>
+            </div>
+        </div>
+
+        <div id="dashboard-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 
         <div id="settings-view" class="w-full hidden bg-gray-800 rounded-xl border border-gray-700 p-6">
             <h2 class="text-2xl font-bold mb-2 text-white">⚙️ Configuration (config.yml)</h2>
