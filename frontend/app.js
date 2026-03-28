@@ -100,7 +100,7 @@ async function refreshDashboard() {
             `;
         }).join("");
 
-        document.getElementById("dashboard").innerHTML = containers;
+        document.getElementById("dashboard-view").innerHTML = containers;
 
         const updateAllBtn = document.getElementById("update-all-btn");
         if (pendingUpdates.length > 0) {
@@ -208,4 +208,68 @@ function closeLogModal() {
     document.getElementById("log-modal").classList.add("hidden");
     document.getElementById("log-modal").classList.remove("flex");
     document.getElementById("log-modal-content").innerText = "";
+}
+
+// --- Tab & Settings Logic ---
+
+function switchTab(tabName) {
+    const dashView = document.getElementById("dashboard-view");
+    const setView = document.getElementById("settings-view");
+    const dashTab = document.getElementById("tab-dashboard");
+    const setTab = document.getElementById("tab-settings");
+
+    if (tabName === 'dashboard') {
+        dashView.classList.remove("hidden");
+        setView.classList.add("hidden");
+        dashTab.className = "text-cyan-400 font-bold transition";
+        setTab.className = "text-gray-400 hover:text-cyan-400 transition";
+    } else {
+        dashView.classList.add("hidden");
+        setView.classList.remove("hidden");
+        setTab.className = "text-cyan-400 font-bold transition";
+        dashTab.className = "text-gray-400 hover:text-cyan-400 transition";
+        loadConfig(); // Fetch latest config when opening settings
+    }
+}
+
+async function loadConfig() {
+    try {
+        const res = await apiFetch("/api/config");
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById("config-editor").value = data.yaml_text;
+        } else {
+            document.getElementById("config-editor").value = "# Error loading config: " + data.detail;
+        }
+    } catch (e) {
+        console.error("Failed to load config", e);
+    }
+}
+
+async function saveConfig() {
+    const yamlText = document.getElementById("config-editor").value;
+    const statusText = document.getElementById("config-save-status");
+
+    statusText.innerText = "⏳ Saving...";
+    statusText.className = "text-sm text-yellow-400";
+
+    try {
+        const res = await apiFetch("/api/config", {
+            method: "PUT",
+            body: JSON.stringify({ yaml_text: yamlText })
+        });
+
+        if (res.ok) {
+            statusText.innerText = "✅ Saved successfully!";
+            statusText.className = "text-sm text-green-400";
+            setTimeout(() => statusText.innerText = "", 3000);
+        } else {
+            const data = await res.json();
+            statusText.innerText = "❌ Error: " + (data.detail || "Invalid YAML");
+            statusText.className = "text-sm text-red-400";
+        }
+    } catch (e) {
+        statusText.innerText = "❌ Network Error";
+        statusText.className = "text-sm text-red-400";
+    }
 }

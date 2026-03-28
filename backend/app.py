@@ -5,7 +5,10 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from pydantic import BaseModel
 import yaml
+
+class ConfigUpdate(BaseModel): yaml_text: str
 
 app = FastAPI(title="Container Monitor API")
 scheduler = AsyncIOScheduler()
@@ -105,11 +108,16 @@ async def get_monitor_log(lines: int = 200):
 @app.get("/api/config")
 async def get_config():
     if not CONFIG_F.exists(): raise HTTPException(404, "config.yml not found")
-    return yaml.safe_load(CONFIG_F.read_text())
+    return {"yaml_text": CONFIG_F.read_text()}
 
 @app.put("/api/config")
-async def update_config(data: dict):
-    CONFIG_F.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
+async def update_config(data: ConfigUpdate):
+    try:
+        yaml.safe_load(data.yaml_text)
+    except yaml.YAMLError as e:
+        raise HTTPException(400, f"Invalid YAML format: {e}")
+    
+    CONFIG_F.write_text(data.yaml_text)
     return {"status": "saved"}
 
 @app.get("/api/container-logs/{container_name}")
