@@ -113,10 +113,19 @@ function triggerRun() {
 async function updateContainer(name) {
     if(!confirm(`Are you sure you want to pull and recreate ${name}?`)) return;
     alert(`Updating ${name}... This may take a minute.`);
-    const res = await apiFetch(`/api/update/${name}`, { method: "POST" });
-    const data = await res.json();
-    if(data.exit_code !== 0) alert("Update failed:\n" + data.error);
-    else alert("Update successful!");
+    try {
+        const res = await apiFetch(`/api/update/${name}`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok) {
+            alert("Update failed:\n" + (data.detail || res.statusText));
+        } else if (data.exit_code !== 0) {
+            alert("Docker Compose failed:\n" + (data.error || "Unknown error") + "\n\nOutput:\n" + data.output);
+        } else {
+            alert("Update successful! " + name + " has been recreated.");
+        }
+    } catch (e) {
+        alert("Network or API request failed:\n" + e.message);
+    }
     refreshDashboard();
 }
 
