@@ -1,6 +1,8 @@
 const TOKEN_KEY = "cm_token";
 const STATUS_PRIORITY = { "Status": "red", "Restarts": "red", "Resources": "yellow", "Disk": "yellow", "Network": "yellow", "Logs": "yellow", "Updates": "yellow" };
 
+let pendingUpdates = []; // Tracks containers that have updates
+
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
@@ -44,13 +46,11 @@ async function refreshDashboard() {
         const [dockerRes, stateRes] = await Promise.all([
             apiFetch("/api/containers"), apiFetch("/api/state")
         ]);
-
         const dockerList = await dockerRes.json();
         const state = await stateRes.json();
-
         const issueMap = state.container_issues ?? {};
         const updateCache = state.updates ?? {};
-
+        pendingUpdates = [];
         const containers = dockerList.map(c => {
             const name = c.Names.replace(/^\//, "");
             const issues = issueMap[name] ? issueMap[name].split(",").map(s => s.trim()) : [];
@@ -66,6 +66,7 @@ async function refreshDashboard() {
             const cacheKey = (c.Image || "").replace(/\//g, "_");
             const updateObj = Object.values(updateCache).find(e => e?.image_ref?.replace(/\//g, "_") === cacheKey);
             const hasUpdate = updateObj && updateObj.data && updateObj.data.exit_code === 100;
+            if (hasUpdate) pendingUpdates.push(name);
 
             return `
                 <div class="p-5 rounded-xl border ${color} transition flex flex-col justify-between">
@@ -85,11 +86,11 @@ async function refreshDashboard() {
                                 📜 Logs
                             </button>
                             ${hasUpdate ? `
-                                <button onclick="updateContainer('${name}')" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-3 py-2 rounded shadow-[0_0_10px_rgba(202,138,4,0.4)] transition flex justify-center items-center gap-2">
+                                <button onclick="updateContainer('${name}', this)" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-3 py-2 rounded shadow-[0_0_10px_rgba(202,138,4,0.4)] transition flex justify-center items-center gap-2">
                                     🔄 Update Now
                                 </button>
                             ` : `
-                                <button onclick="updateContainer('${name}')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-2 rounded transition flex justify-center items-center gap-2" title="Force Pull & Recreate">
+                                <button onclick="updateContainer('${name}', this)" class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-2 rounded transition flex justify-center items-center gap-2" title="Force Pull & Recreate">
                                     🔄 Force Update
                                 </button>
                             `}
@@ -100,19 +101,44 @@ async function refreshDashboard() {
         }).join("");
 
         document.getElementById("dashboard").innerHTML = containers;
+
+        const updateAllBtn = document.getElementById("update-all-btn");
+        if (pendingUpdates.length > 0) {
+            updateAllBtn.classList.remove("hidden");
+            updateAllBtn.innerText = `🔄 Update All (${pendingUpdates.length})`;
+        } else {
+            updateAllBtn.classList.add("hidden");
+        }
+
     } catch (e) {
         console.error("Dashboard refresh failed", e);
     }
 }
 
-function triggerRun() {
-    alert("Checks triggered in background. Dashboard will update automatically in ~30 seconds.");
-    apiFetch("/api/run", { method: "POST" }).catch(e => console.error(e));
+async function triggerRun() {
+    const btn = document.getElementById("run-check-btn");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ Running...";
+    btn.disabled = true;
+
+    try {
+        await apiFetch("/api/run", { method: "POST" });
+    } catch (e) {
+        console.error("Run check failed", e);
+    }
+
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+    refreshDashboard();
 }
 
-async function updateContainer(name) {
+async function updateContainer(name, btnElement) {
     if(!confirm(`Are you sure you want to pull and recreate ${name}?`)) return;
-    alert(`Updating ${name}... This may take a minute.`);
+
+    const originalText = btnElement.innerHTML;
+    btnElement.innerHTML = "⏳ Updating...";
+    btnElement.disabled = true;
+
     try {
         const res = await apiFetch(`/api/update/${name}`, { method: "POST" });
         const data = await res.json();
@@ -121,11 +147,45 @@ async function updateContainer(name) {
         } else if (data.exit_code !== 0) {
             alert("Docker Compose failed:\n" + (data.error || "Unknown error") + "\n\nOutput:\n" + data.output);
         } else {
-            alert("Update successful! " + name + " has been recreated.");
+            await apiFetch("/api/run", { method: "POST" });
         }
     } catch (e) {
         alert("Network or API request failed:\n" + e.message);
     }
+
+    btnElement.innerHTML = originalText;
+    btnElement.disabled = false;
+    refreshDashboard();
+}
+
+async function updateAll() {
+    if (!confirm(`Are you sure you want to update all ${pendingUpdates.length} eligible containers?`)) return;
+
+    const btn = document.getElementById("update-all-btn");
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ Updating All...";
+    btn.disabled = true;
+    let successCount = 0;
+    let failCount = 0;
+    for (const name of pendingUpdates) {
+        try {
+            const res = await apiFetch(`/api/update/${name}`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok && data.exit_code === 0) {
+                successCount++;
+            } else {
+                failCount++;
+                console.error(`Failed to update ${name}:`, data);
+            }
+        } catch (e) {
+            failCount++;
+            console.error(`Network error updating ${name}:`, e);
+        }
+    }
+    alert(`Update All Complete.\nSuccess: ${successCount}\nFailed: ${failCount}`);
+    await apiFetch("/api/run", { method: "POST" });
+    btn.innerHTML = originalText;
+    btn.disabled = false;
     refreshDashboard();
 }
 
