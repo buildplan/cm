@@ -1,16 +1,32 @@
+# 1: Builder Stage
+FROM alpine:3.23 AS builder
+
+# Install build-time dependencies
+RUN apk add --no-cache python3 py3-pip curl
+
+# Create a python virtual environment & install packages
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip3 install --no-cache-dir fastapi uvicorn apscheduler
+
+# Download yq
+ARG TARGETARCH=amd64
+RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" -o /yq \
+    && chmod +x /yq
+
+# 2: Final Image
 FROM alpine:3.23
 
-# Install dependencies including python, docker cli, skopeo
+# Install runtime dependencies
 RUN apk add --no-cache \
     bash jq skopeo curl gawk coreutils docker-cli docker-cli-compose tzdata \
-    python3 py3-pip py3-yaml \
-    && rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED \
-    && pip3 install --no-cache-dir fastapi uvicorn apscheduler
+    python3 py3-yaml
 
-# Install yq
-ARG TARGETARCH=amd64
-RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" -o /usr/local/bin/yq \
-    && chmod +x /usr/local/bin/yq
+# Copy the virtual environment and yq from the builder stage
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /yq /usr/local/bin/yq
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
