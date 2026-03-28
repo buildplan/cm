@@ -68,20 +68,33 @@ async function refreshDashboard() {
             const hasUpdate = updateObj && updateObj.data && updateObj.data.exit_code === 100;
 
             return `
-                <div class="p-5 rounded-xl border ${color} transition">
-                    <div class="flex justify-between items-start mb-2">
-                        <h3 class="font-bold text-lg flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full ${indicator}"></span> ${name}
-                        </h3>
-                        <span class="text-xs text-gray-400">${c.Status}</span>
-                    </div>
-                    ${issues.length > 0 ? `<p class="text-sm text-gray-300 mt-2"><strong>Issues:</strong> ${issues.join(", ")}</p>` : `<p class="text-sm text-gray-400 mt-2">No active issues.</p>`}
-                    ${hasUpdate ? `
-                        <div class="mt-4 pt-4 border-t border-gray-700 flex justify-between items-center">
-                            <span class="text-sm text-yellow-400">Update Available</span>
-                            <button onclick="updateContainer('${name}')" class="bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-3 py-1 rounded">Update Now</button>
+                <div class="p-5 rounded-xl border ${color} transition flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="font-bold text-lg flex items-center gap-2 truncate" title="${name}">
+                                <span class="w-3 h-3 flex-shrink-0 rounded-full ${indicator}"></span> <span class="truncate">${name}</span>
+                            </h3>
+                            <span class="text-xs text-gray-400 ml-2 px-2 py-1 bg-gray-800 rounded whitespace-nowrap">${c.Status.split(' ')[0]}</span>
                         </div>
-                    ` : ''}
+                        ${issues.length > 0 ? `<p class="text-sm text-gray-300 mt-2"><strong>Issues:</strong> ${issues.join(", ")}</p>` : `<p class="text-sm text-gray-400 mt-2">No active issues.</p>`}
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t border-gray-700 flex flex-wrap gap-2 justify-between items-center">
+                        <div class="flex gap-2 w-full">
+                            <button onclick="viewLogs('${name}')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs px-3 py-2 rounded transition flex justify-center items-center gap-2">
+                                📜 Logs
+                            </button>
+                            ${hasUpdate ? `
+                                <button onclick="updateContainer('${name}')" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-xs px-3 py-2 rounded shadow-[0_0_10px_rgba(202,138,4,0.4)] transition flex justify-center items-center gap-2">
+                                    🔄 Update Now
+                                </button>
+                            ` : `
+                                <button onclick="updateContainer('${name}')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs px-3 py-2 rounded transition flex justify-center items-center gap-2" title="Force Pull & Recreate">
+                                    🔄 Force Update
+                                </button>
+                            `}
+                        </div>
+                    </div>
                 </div>
             `;
         }).join("");
@@ -105,4 +118,25 @@ async function updateContainer(name) {
     if(data.exit_code !== 0) alert("Update failed:\n" + data.error);
     else alert("Update successful!");
     refreshDashboard();
+}
+
+async function viewLogs(name) {
+    document.getElementById("log-modal").classList.remove("hidden");
+    document.getElementById("log-modal").classList.add("flex");
+    document.getElementById("log-modal-title").innerText = `Logs: ${name}`;
+    document.getElementById("log-modal-content").innerText = "Fetching logs...";
+
+    try {
+        const res = await apiFetch(`/api/container-logs/${name}`);
+        const data = await res.json();
+        document.getElementById("log-modal-content").textContent = data.output || "No logs available or command failed.";
+    } catch (e) {
+        document.getElementById("log-modal-content").innerText = "Error fetching logs from server.";
+    }
+}
+
+function closeLogModal() {
+    document.getElementById("log-modal").classList.add("hidden");
+    document.getElementById("log-modal").classList.remove("flex");
+    document.getElementById("log-modal-content").innerText = "";
 }

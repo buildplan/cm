@@ -112,5 +112,10 @@ async def update_config(data: dict):
     CONFIG_F.write_text(yaml.dump(data, default_flow_style=False, allow_unicode=True))
     return {"status": "saved"}
 
+@app.get("/api/container-logs/{container_name}")
+async def get_container_logs(container_name: str):
+    code, out = await run_script("--logs", container_name)
+    return {"output": out}
+
 # --- Serve Frontend ---
 app.mount("/", StaticFiles(directory="/app/frontend", html=True), name="frontend")
