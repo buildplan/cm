@@ -2,7 +2,7 @@ FROM alpine:3.19
 
 # Install dependencies including python, docker cli, skopeo
 RUN apk add --no-cache \
-    bash jq skopeo curl gawk coreutils docker-cli tzdata \
+    bash jq skopeo curl gawk coreutils docker-cli docker-cli-compose tzdata \
     python3 py3-pip py3-yaml \
     && rm -rf /usr/lib/python3.*/EXTERNALLY-MANAGED \
     && pip3 install --no-cache-dir fastapi uvicorn apscheduler
