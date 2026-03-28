@@ -44,12 +44,12 @@ async function showApp() {
 async function refreshDashboard() {
     try {
         const [dockerRes, stateRes, statsRes] = await Promise.all([
-            apiFetch("/api/containers"), 
+            apiFetch("/api/containers"),
             apiFetch("/api/state"),
             apiFetch("/api/host-stats")
         ]);
         const dockerList = await dockerRes.json();
-        const state = await stateRes.json();        
+        const state = await stateRes.json();
         if (statsRes.ok) {
             const stats = await statsRes.json();
             document.getElementById("stat-cpu").innerText = stats.cpu_load;

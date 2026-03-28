@@ -17,7 +17,7 @@
         <header class="flex justify-between items-center mb-8 pb-4 border-b border-gray-700">
             <div class="flex items-center gap-6">
                 <h1 class="text-3xl font-bold text-cyan-400">☸️ Container Monitor</h1>
-                <nav class="hidden md:flex space-x-4 border-l border-gray-700 pl-6">
+                <nav class="hidden md:flex space-x-6 border-l border-gray-700 pl-6">
                     <button onclick="switchTab('dashboard')" id="tab-dashboard" class="text-cyan-400 font-bold transition">Dashboard</button>
                     <button onclick="switchTab('settings')" id="tab-settings" class="text-gray-400 hover:text-cyan-400 transition">Settings</button>
                 </nav>
@@ -29,33 +29,33 @@
             </div>
         </header>
 
-        <div id="host-stats-bar" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex items-center justify-between shadow-sm">
+        <div id="host-stats-bar" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-gray-800/80 border border-gray-700 p-6 rounded-xl flex items-center justify-between shadow-lg">
                 <div>
-                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Host CPU Load (1m)</p>
-                    <p id="stat-cpu" class="text-2xl font-bold text-cyan-400 mt-1">--</p>
+                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Host CPU Load (1m)</p>
+                    <p id="stat-cpu" class="text-4xl font-bold text-cyan-400">--</p>
                 </div>
-                <div class="text-4xl opacity-80">⚙️</div>
+                <div class="text-5xl opacity-50 grayscale">⚙️</div>
             </div>
-            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex items-center justify-between shadow-sm">
+            <div class="bg-gray-800/80 border border-gray-700 p-6 rounded-xl flex items-center justify-between shadow-lg">
                 <div>
-                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Host Memory</p>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <p id="stat-mem" class="text-2xl font-bold text-cyan-400">--</p>
-                        <p id="stat-mem-detail" class="text-xs text-gray-500">-- / --</p>
+                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Host Memory</p>
+                    <div class="flex items-baseline gap-3">
+                        <p id="stat-mem" class="text-4xl font-bold text-cyan-400">--</p>
+                        <p id="stat-mem-detail" class="text-sm text-gray-500 font-medium">-- / --</p>
                     </div>
                 </div>
-                <div class="text-4xl opacity-80">🧠</div>
+                <div class="text-5xl opacity-80">🧠</div>
             </div>
-            <div class="bg-gray-800 border border-gray-700 p-5 rounded-xl flex items-center justify-between shadow-sm">
+            <div class="bg-gray-800/80 border border-gray-700 p-6 rounded-xl flex items-center justify-between shadow-lg">
                 <div>
-                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Host Disk (<span id="stat-disk-fs">/</span>)</p>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <p id="stat-disk" class="text-2xl font-bold text-cyan-400">--</p>
-                        <p id="stat-disk-detail" class="text-xs text-gray-500">-- / --</p>
+                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Host Disk (<span id="stat-disk-fs" class="uppercase">/</span>)</p>
+                    <div class="flex items-baseline gap-3">
+                        <p id="stat-disk" class="text-4xl font-bold text-cyan-400">--</p>
+                        <p id="stat-disk-detail" class="text-sm text-gray-500 font-medium">-- / --</p>
                     </div>
                 </div>
-                <div class="text-4xl opacity-80">💾</div>
+                <div class="text-5xl opacity-80">💾</div>
             </div>
         </div>
 
