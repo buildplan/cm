@@ -11,12 +11,13 @@ ARG TARGETARCH=amd64
 RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" -o /yq \
     && chmod +x /yq
 
-RUN find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+RUN pip3 uninstall -y pip setuptools \
+    && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # 2: Final Image
 FROM alpine:3.23
 
-RUN apk add --no-cache \
+RUN apk upgrade --no-cache && apk add --no-cache \
     bash jq skopeo curl docker-cli docker-cli-compose tzdata python3
 
 COPY --from=builder /opt/venv /opt/venv
