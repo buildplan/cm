@@ -41,42 +41,54 @@ services:
     container_name: dockerproxy
     restart: unless-stopped
     environment:
-      - CONTAINERS=1 
-      - IMAGES=1     
-      - NETWORKS=1   
-      - VOLUMES=1    
-      - POST=1       
+      # Required for basic tracking
+      - CONTAINERS=1 # Allow listing, inspecting, and reading logs
+      - IMAGES=1     # Allow pulling images and checking digests
+      - INFO=1       # Allow 'docker info' for daemon connection checks
+
+      # Required for app actions
+      - POST=1       # Allow POST operations (Start, Stop, Restart, Pull, Recreate)
+      - EXEC=1       # Allow 'docker exec' for container disk/network stats gathering
+      - SYSTEM=1     # Allow 'docker system prune' for the UI cleanup button
+
+      # Required for compose recreation
+      - NETWORKS=1   # Needed for compose to attach containers to networks
+      - VOLUMES=1    # Needed for compose to attach existing volumes
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro 
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
 
   container-monitor:
     image: ghcr.io/buildplan/cm:latest
     container_name: container-monitor
+    hostname: myserver
     restart: unless-stopped
     depends_on:
       - dockerproxy
     ports:
       - "9000:9000"
     volumes:
-      - /:/hostfs:ro 
-      - ./data:/app/data 
+      - /:/hostfs:ro
+      - ./data:/app/data
       - /opt/docker:/opt/docker # Map to your local compose directories
     environment:
       # System Configuration
-      - DOCKER_HOST=tcp://dockerproxy:2375 
+      - DOCKER_HOST=tcp://dockerproxy:2375
       - DATA_DIR=/app/data
       - HOST_DISK_CHECK_FILESYSTEM=/hostfs
       - CONTAINER_MODE=true
       - TZ=Europe/London
       - SECRET_TOKEN=your_secure_password_here
-      
+
       # Optional Configuration Seeds (Populates config.yml on first boot)
       - MONITOR_INTERVAL_HOURS=6
       - UPDATE_CHECK_CACHE_HOURS=6
       - CPU_WARNING_THRESHOLD=80
       - MEMORY_WARNING_THRESHOLD=80
       - DISK_SPACE_THRESHOLD=80
-      
+
       # Notifications
       - NOTIFICATION_CHANNEL=none # Options: discord, ntfy, generic, none
       - NOTIFY_ON=Updates,Logs,Status,Restarts,Resources
@@ -85,7 +97,7 @@ services:
       - NTFY_TOPIC=
       - NTFY_ACCESS_TOKEN=
       - NTFY_PRIORITY=3
-      
+
       # Container Filters & Updates
       - EXCLUDE_UPDATES=my-local-app-1,my-backend-api
       - LOG_ERROR_PATTERNS=Exception,SEVERE,Traceback,panic,fatal
