@@ -126,7 +126,7 @@ def script_env():
     }
 
 async def run_script(*args) -> tuple[int, str]:
-    cmd = [str(SCRIPT), "--no-update", *args]
+    cmd = [str(SCRIPT), *args]
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=script_env()
