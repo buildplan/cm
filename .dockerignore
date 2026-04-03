@@ -1,0 +1,5 @@
+docker-compose.yml
+README.md
+renovate.json
+.dockerignore
+.github/
