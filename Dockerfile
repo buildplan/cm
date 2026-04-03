@@ -20,11 +20,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-COPY container-monitor.sh .
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
-RUN chmod +x /app/container-monitor.sh && mkdir -p /app/data
+RUN chmod +x /app/backend/container-monitor.sh && mkdir -p /app/data
 
 EXPOSE 9000
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "9000", "--workers", "1"]
