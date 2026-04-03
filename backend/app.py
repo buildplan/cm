@@ -20,7 +20,7 @@ CONFIG_F  = DATA_DIR / "config.yml"
 LOG_F     = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
 
-DEFAULT_CONFIG = """# Docker Container Monitor Configuration
+DEFAULT_CONFIG_TEMPLATE = """# Docker Container Monitor Configuration
 
 general:
   log_lines_to_check: 40
@@ -47,8 +47,6 @@ logs:
     my-pgdb:
       - "database system is ready to accept connections"
       - "incomplete startup packet"
-    dozzle-agent:
-      - "level=warning.*deprecated" # can use standard regex here
 
 # Credentials for private registries.
 # It is safer to provide these using environment variables:
@@ -79,8 +77,6 @@ notifications:
   discord:
     webhook_url: "https://discord.com/api/webhooks/xxxxxxxx"
 
-  # Generic Webhook (Slack, Teams, Mattermost, n8n, etc.)
-  # Sends a simple JSON POST: {"text": "Title: Message"}
   generic:
     webhook_url: "" 
 
@@ -88,18 +84,14 @@ notifications:
     server_url: "https://ntfy.sh"
     topic: "your_ntfy_topic_here"
     access_token: ""
-    priority: 3  # 1=min, 3=default, 4=high, 5=urgent
+    priority: 3
     icon_url: "https://raw.githubusercontent.com/buildplan/container-monitor/refs/heads/main/logo.png"
-    click_url: "" # Optional: e.g., "http://your-server:9000" to open a dashboard
+    click_url: ""
 
 containers:
   # Add the names of containers to monitor by default
   monitor_defaults:
-    - "dozzle-agent"
-    - "komodo-periphery"
-    - "beszel-agent"
-    - "forgejo-server"
-    - "my-pgdb"
+__DYNAMIC_MONITOR_DEFAULTS__
 
   # URLs for release notes, used for update checks
   release_urls:
@@ -202,9 +194,20 @@ async def scheduled_run():
 
 @app.on_event("startup")
 async def startup():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)    
     if not CONFIG_F.exists():
-        CONFIG_F.write_text(DEFAULT_CONFIG)
+        try:
+            result = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True, check=True)
+            discovered_containers = [name.strip() for name in result.stdout.splitlines() if name.strip()]
+        except Exception as e:
+            print(f"Failed to auto-discover containers: {e}")
+            discovered_containers = []
+        if discovered_containers:
+            yaml_list = "\n".join([f"    - \"{name}\"" for name in discovered_containers])
+        else:
+            yaml_list = "    # No running containers detected.\n    # - \"example-container\""
+        final_config = DEFAULT_CONFIG_TEMPLATE.replace("__DYNAMIC_MONITOR_DEFAULTS__", yaml_list)
+        CONFIG_F.write_text(final_config)
     interval_hours = int(os.environ.get("MONITOR_INTERVAL_HOURS", 6))
     scheduler.add_job(scheduled_run, IntervalTrigger(hours=interval_hours), id="monitor")
     scheduler.start()
