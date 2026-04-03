@@ -31,16 +31,11 @@ general:
   healthchecks_fail_on: "" # Comma-separated list of issues to fail on:
                            # Status,Restarts,Resources,Disk,Network,Updates,Logs
 
-# Custom patterns for the log checker.
-# If this section is omitted, the script defaults to checking for:
-# error, panic, fail, fatal
 logs:
   error_patterns:
     - "Exception"
     - "SEVERE"
     - "Traceback"
-  # Optional regex to strip variable data from logs before hashing.
-  # This default handles Docker's --timestamps format. You can adapt it for other log drivers.
   log_clean_pattern: '^[^ ]+[[:space:]]+'
 
   ignore_patterns:
@@ -48,15 +43,9 @@ logs:
       - "database system is ready to accept connections"
       - "incomplete startup packet"
 
-# Credentials for private registries.
-# It is safer to provide these using environment variables:
-# export DOCKER_USERNAME="myuser"
-# export DOCKER_PASSWORD="mypassword"
 auth:
   docker_username: ""
   docker_password: ""
-  # Path to your Docker config.json for authentication.
-  # Defaults to ~/.docker/config.json if not set.
   docker_config_path: "~/.docker/config.json"
 
 thresholds:
@@ -69,9 +58,7 @@ host_system:
   disk_check_filesystem: "/"
 
 notifications:
-  # Set channel to "discord", "ntfy", "generic", or "none"
   channel: "none"
-  # Specify which issues trigger notifications (comma-separated: Updates,Logs,Status,Restarts,Resources,Disk,Network)
   notify_on: "Updates,Logs"
 
   discord:
@@ -103,60 +90,28 @@ __DYNAMIC_MONITOR_DEFAULTS__
     portainer/portainer-ce: "https://github.com/portainer/portainer/releases"
     lscr.io/linuxserver/radarr: "https://github.com/lscr.io/linuxserver.io/pkgs/container/radarr"
 
-  # (Optional)
-  # If a container isn't listed here, it uses the 'default' strategy.
   update_strategies:
-
-    # Strategy 1: "digest" (Most common for rolling tags)
-    # ------------------------------------------------------------------
-    # Use for: Any tag that is "rolling" or "floating". This includes 'latest',
-    # major versions like '17', and variants like '17-alpine' or 'stable'.
-    # How it works: Compares the local and remote image's unique ID (digest).
-    # This is the most reliable way to check for updates on non-specific tags.
     postgres: "digest"
     redis: "digest"
     themythologist/monkeytype: "digest"
-
-    # Strategy 2: "semver"
-    # ------------------------------------------------------------------
-    # Use for: Images that have clean versioning (e.g., 1.2.3) but are mixed
-    # with messy build numbers or other non-version tags.
-    # How it works: Strictly filters for tags that look like X.Y.Z.
     grafana/grafana: "semver"
 
-    # Strategy 3: "major-lock" (More niche use case)
-    # ------------------------------------------------------------------
-    # Use for: When you want to stay within a specific MAJOR version (e.g., '7.x.x')
-    # and be notified of new MINOR or PATCH updates.
-    # How it works: If your current tag is '7.1.5', it will look for any newer tags
-    # that start with '7.' (e.g., '7.2.0' or '7.1.6').
-    # some-specific-app: "major-lock"
-
-
-  # Exclude specific containers from the update check
   exclude:
     updates:
-      - my-local-app-1     # Name of your locally built container
-      - my-backend-api     # Any other you want to skip
+      - my-local-app-1     
+      - my-backend-api     
 
 auto_update:
   enabled: false
-  # Only auto-update containers that use these "floating" tags
   tags:
     - "latest"
     - "stable"
     - "main"
     - "master"
     - "nightly"
-  # Explicitly include containers (supports regex).
-  # If this list is populated, ONLY these will be updated.
-  include: []  # <--- remove [] to enable include
-  #  - "my-app-.*"
-  #  - "dozzle"
-
-  # Exclude specific containers from auto-updates
+  include: []  
   exclude:
-    - "postgres"  # Databases should usually be updated manually
+    - "postgres"  
     - "mongo"
     - "redis"
 """
@@ -172,7 +127,6 @@ async def token_auth(request: Request, call_next):
                 return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     return await call_next(request)
 
-# --- Shared Env ---
 def script_env():
     return {
         **os.environ,
@@ -183,11 +137,15 @@ def script_env():
 
 async def run_script(*args) -> tuple[int, str]:
     cmd = [str(SCRIPT), "--no-update", *args]
-    proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=script_env()
-    )
-    out, _ = await proc.communicate()
-    return proc.returncode, out.decode("utf-8", errors="replace")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=script_env()
+        )
+        out, _ = await proc.communicate()
+        return proc.returncode, out.decode("utf-8", errors="replace")
+    except Exception as e:
+        error_msg = f"❌ Backend Execution Error: {str(e)}\n\n(If you see 'No such file or directory' or 'Exec format error', your container-monitor.sh script likely has Windows CRLF line endings. You need to convert it to LF formatting!)"
+        return 1, error_msg
 
 async def scheduled_run():
     await run_script("--summary")
@@ -207,6 +165,7 @@ async def startup():
         else:
             yaml_list = "    # No running containers detected.\n    # - \"example-container\""
         final_config = DEFAULT_CONFIG_TEMPLATE.replace("__DYNAMIC_MONITOR_DEFAULTS__", yaml_list)
+        final_config = final_config.replace("\r\n", "\n")
         CONFIG_F.write_text(final_config)
     interval_hours = int(os.environ.get("MONITOR_INTERVAL_HOURS", 6))
     scheduler.add_job(scheduled_run, IntervalTrigger(hours=interval_hours), id="monitor")
@@ -229,15 +188,13 @@ async def trigger_run(force: bool = False):
     code, out = await run_script(*args)
     return {"exit_code": code, "output": out}
 
-@app.post("/api/update/{container_name}")
+@app.post("/api/update/{container_name:path}")
 async def update_container(container_name: str):
-    # Direct compose execution (Trap 1 Fix)
     inspect = subprocess.run(
         ["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', container_name],
         capture_output=True, text=True
     )
     working_dir = inspect.stdout.strip()
-
     if not working_dir or not Path(working_dir).is_dir():
         raise HTTPException(400, f"'{container_name}' lacks a compose working_dir label, or '{working_dir}' isn't mounted.")
 
@@ -251,7 +208,6 @@ async def update_container(container_name: str):
         output_lines.append(out.decode("utf-8", errors="replace"))
         if proc.returncode != 0:
             return {"exit_code": proc.returncode, "output": "\n".join(output_lines), "error": f"Failed: {' '.join(compose_args)}"}
-
     return {"exit_code": 0, "output": "\n".join(output_lines)}
 
 @app.post("/api/prune")
@@ -263,7 +219,7 @@ async def prune_system():
     out, _ = await proc.communicate()
     return {"exit_code": proc.returncode, "output": out.decode("utf-8", errors="replace")}
 
-@app.post("/api/containers/{action}/{container_name}")
+@app.post("/api/containers/{action}/{container_name:path}")
 async def control_container(action: str, container_name: str):
     if action not in ["start", "stop", "restart"]:
         raise HTTPException(400, "Invalid action")
@@ -295,7 +251,7 @@ async def update_config(data: ConfigUpdate):
     CONFIG_F.write_text(data.yaml_text)
     return {"status": "saved"}
 
-@app.get("/api/container-logs/{container_name}")
+@app.get("/api/container-logs/{container_name:path}")
 async def get_container_logs(container_name: str):
     code, out = await run_script("--logs", container_name)
     return {"output": out}
@@ -331,5 +287,4 @@ async def get_host_stats():
     except Exception: pass
     return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
 
-# --- Serve Frontend ---
 app.mount("/", StaticFiles(directory="/app/frontend", html=True), name="frontend")
