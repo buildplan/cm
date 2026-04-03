@@ -20,6 +20,155 @@ CONFIG_F  = DATA_DIR / "config.yml"
 LOG_F     = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
 
+DEFAULT_CONFIG = """# Docker Container Monitor Configuration
+
+general:
+  log_lines_to_check: 40
+  log_file: "container-monitor.log"
+  update_check_cache_hours: 6 # check for new updates after 6 hours
+  lock_timeout_seconds: 30 # configurable lock timeout
+  healthchecks_job_url: "" # e.g., "https://hc.mydomain.com/ping/YOUR-KEY-HERE"
+  healthchecks_fail_on: "" # Comma-separated list of issues to fail on:
+                           # Status,Restarts,Resources,Disk,Network,Updates,Logs
+
+# Custom patterns for the log checker.
+# If this section is omitted, the script defaults to checking for:
+# error, panic, fail, fatal
+logs:
+  error_patterns:
+    - "Exception"
+    - "SEVERE"
+    - "Traceback"
+  # Optional regex to strip variable data from logs before hashing.
+  # This default handles Docker's --timestamps format. You can adapt it for other log drivers.
+  log_clean_pattern: '^[^ ]+[[:space:]]+'
+
+  ignore_patterns:
+    my-pgdb:
+      - "database system is ready to accept connections"
+      - "incomplete startup packet"
+    dozzle-agent:
+      - "level=warning.*deprecated" # can use standard regex here
+
+# Credentials for private registries.
+# It is safer to provide these using environment variables:
+# export DOCKER_USERNAME="myuser"
+# export DOCKER_PASSWORD="mypassword"
+auth:
+  docker_username: ""
+  docker_password: ""
+  # Path to your Docker config.json for authentication.
+  # Defaults to ~/.docker/config.json if not set.
+  docker_config_path: "~/.docker/config.json"
+
+thresholds:
+  cpu_warning: 80
+  memory_warning: 80
+  disk_space: 80
+  network_error: 10
+
+host_system:
+  disk_check_filesystem: "/"
+
+notifications:
+  # Set channel to "discord", "ntfy", "generic", or "none"
+  channel: "none"
+  # Specify which issues trigger notifications (comma-separated: Updates,Logs,Status,Restarts,Resources,Disk,Network)
+  notify_on: "Updates,Logs"
+
+  discord:
+    webhook_url: "https://discord.com/api/webhooks/xxxxxxxx"
+
+  # Generic Webhook (Slack, Teams, Mattermost, n8n, etc.)
+  # Sends a simple JSON POST: {"text": "Title: Message"}
+  generic:
+    webhook_url: "" 
+
+  ntfy:
+    server_url: "https://ntfy.sh"
+    topic: "your_ntfy_topic_here"
+    access_token: ""
+    priority: 3  # 1=min, 3=default, 4=high, 5=urgent
+    icon_url: "https://raw.githubusercontent.com/buildplan/container-monitor/refs/heads/main/logo.png"
+    click_url: "" # Optional: e.g., "http://your-server:9000" to open a dashboard
+
+containers:
+  # Add the names of containers to monitor by default
+  monitor_defaults:
+    - "dozzle-agent"
+    - "komodo-periphery"
+    - "beszel-agent"
+    - "forgejo-server"
+    - "my-pgdb"
+
+  # URLs for release notes, used for update checks
+  release_urls:
+    amir20/dozzle: "https://github.com/amir20/dozzle/releases"
+    ghcr.io/moghtech/komodo-periphery: "https://github.com/moghtech/komodo/releases"
+    henrygd/beszel: "https://github.com/henrygd/beszel/releases"
+    codeberg.org/forgejo/forgejo: "https://forgejo.org/releases"
+    postgres: "https://www.postgresql.org/docs/release/"
+    portainer/portainer-ce: "https://github.com/portainer/portainer/releases"
+    lscr.io/linuxserver/radarr: "https://github.com/lscr.io/linuxserver.io/pkgs/container/radarr"
+
+  # (Optional)
+  # If a container isn't listed here, it uses the 'default' strategy.
+  update_strategies:
+
+    # Strategy 1: "digest" (Most common for rolling tags)
+    # ------------------------------------------------------------------
+    # Use for: Any tag that is "rolling" or "floating". This includes 'latest',
+    # major versions like '17', and variants like '17-alpine' or 'stable'.
+    # How it works: Compares the local and remote image's unique ID (digest).
+    # This is the most reliable way to check for updates on non-specific tags.
+    postgres: "digest"
+    redis: "digest"
+    themythologist/monkeytype: "digest"
+
+    # Strategy 2: "semver"
+    # ------------------------------------------------------------------
+    # Use for: Images that have clean versioning (e.g., 1.2.3) but are mixed
+    # with messy build numbers or other non-version tags.
+    # How it works: Strictly filters for tags that look like X.Y.Z.
+    grafana/grafana: "semver"
+
+    # Strategy 3: "major-lock" (More niche use case)
+    # ------------------------------------------------------------------
+    # Use for: When you want to stay within a specific MAJOR version (e.g., '7.x.x')
+    # and be notified of new MINOR or PATCH updates.
+    # How it works: If your current tag is '7.1.5', it will look for any newer tags
+    # that start with '7.' (e.g., '7.2.0' or '7.1.6').
+    # some-specific-app: "major-lock"
+
+
+  # Exclude specific containers from the update check
+  exclude:
+    updates:
+      - my-local-app-1     # Name of your locally built container
+      - my-backend-api     # Any other you want to skip
+
+auto_update:
+  enabled: false
+  # Only auto-update containers that use these "floating" tags
+  tags:
+    - "latest"
+    - "stable"
+    - "main"
+    - "master"
+    - "nightly"
+  # Explicitly include containers (supports regex).
+  # If this list is populated, ONLY these will be updated.
+  include: []  # <--- remove [] to enable include
+  #  - "my-app-.*"
+  #  - "dozzle"
+
+  # Exclude specific containers from auto-updates
+  exclude:
+    - "postgres"  # Databases should usually be updated manually
+    - "mongo"
+    - "redis"
+"""
+
 # --- Auth Middleware ---
 @app.middleware("http")
 async def token_auth(request: Request, call_next):
@@ -54,6 +203,8 @@ async def scheduled_run():
 @app.on_event("startup")
 async def startup():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_F.exists():
+        CONFIG_F.write_text(DEFAULT_CONFIG)
     interval_hours = int(os.environ.get("MONITOR_INTERVAL_HOURS", 6))
     scheduler.add_job(scheduled_run, IntervalTrigger(hours=interval_hours), id="monitor")
     scheduler.start()
