@@ -3,31 +3,6 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 set -uo pipefail
 
-# --- Script & Update Configuration ---
-VERSION="v0.82.0"
-VERSION_DATE="2026-02-27"
-SCRIPT_URL="https://github.com/buildplan/container-monitor/raw/refs/heads/main/container-monitor.sh"
-CHECKSUM_URL="${SCRIPT_URL}.sha256" # sha256 hash check
-
-# --- ANSI Color Codes ---
-if [ -t 1 ]; then
-    COLOR_RESET=$'\033[0m'
-    COLOR_RED=$'\033[0;31m'
-    COLOR_GREEN=$'\033[0;32m'
-    COLOR_YELLOW=$'\033[0;33m'
-    COLOR_CYAN=$'\033[0;36m'
-    COLOR_MAGENTA=$'\033[0;35m'
-    COLOR_BLUE=$'\033[0;34m'
-else
-    COLOR_RESET=''
-    COLOR_RED=''
-    COLOR_GREEN=''
-    COLOR_YELLOW=''
-    COLOR_CYAN=''
-    COLOR_MAGENTA=''
-    COLOR_BLUE=''
-fi
-
 # --- Global Flags ---
 SUMMARY_ONLY_MODE=false
 PRINT_MESSAGE_FORCE_STDOUT=false
@@ -319,218 +294,7 @@ print_header_box() {
     echo -e "${border_color}╚${top_border}╝${COLOR_RESET}"
     echo
 }
-check_and_install_dependencies() {
-    if [[ "${CONTAINER_MODE:-false}" == "true" ]]; then
-        print_message "Container mode: all dependencies pre-installed. Skipping." "GOOD"
-        return 0
-    fi
-    local missing_pkgs=()
-    local manual_install_needed=false
-    local pkg_manager=""
-    local arch=""
-    if command -v apt-get &>/dev/null; then
-        pkg_manager="apt"
-    elif command -v dnf &>/dev/null; then
-        pkg_manager="dnf"
-    elif command -v yum &>/dev/null; then
-        pkg_manager="yum"
-    fi
-    case "$(uname -m)" in
-        x86_64) arch="amd64" ;;
-        aarch64) arch="arm64" ;;
-        *) arch="unsupported" ;;
-    esac
-    declare -A deps=(
-        [jq]=jq
-        [skopeo]=skopeo
-        [awk]=gawk
-        [timeout]=coreutils
-        [curl]=curl
-    )
-    print_message "Checking for required command-line tools..." "INFO"
-    if ! command -v docker &>/dev/null; then
-        print_message "Docker is not installed. This is a critical dependency. Please follow the official instructions at https://docs.docker.com/engine/install/" "DANGER"
-        manual_install_needed=true
-    else
-        if ! docker info >/dev/null 2>&1; then
-            if [ "${CONTAINER_MONITOR_RELOADED:-false}" = "true" ]; then
-                print_message "Critical: Script reloaded but permissions are still denied." "DANGER"
-                print_message "Automatic fix failed. Please log out and log back in manually." "DANGER"
-                manual_install_needed=true
-            elif id -nG "$USER" | grep -qw "docker"; then
-                print_message "User '$USER' is already in the 'docker' group, but the current shell session is stale." "INFO"
-                if command -v sg &>/dev/null; then
-                    print_message "Auto-reloading script to activate permissions..." "GOOD"
-                    local args_str=""
-                    printf -v args_str "%q " "$@"
-                    export CONTAINER_MONITOR_RELOADED=true
-                    exec sg docker -c "$0 $args_str"
-                else
-                    print_message "Cannot auto-reload. Please run 'newgrp docker' or log out/in." "WARNING"
-                    manual_install_needed=true
-                fi
-            else
-                print_message "Docker is installed, but the current user ('$USER') cannot access the Docker daemon." "WARNING"
-                print_message "This usually means the user is not in the 'docker' group." "INFO"
-                if [ -t 0 ]; then
-                    read -rp "Would you like to add '$USER' to the 'docker' group to fix this? (y/n): " response
-                    if [[ "$response" =~ ^[yY]$ ]]; then
-                        print_message "Attempting to fix permissions..." "INFO"
-                        sudo groupadd docker 2>/dev/null || true
-                        if sudo usermod -aG docker "$USER"; then
-                            print_message "User '$USER' added to 'docker' group successfully." "GOOD"
-                            if [ -d "$HOME/.docker" ]; then
-                                print_message "Fixing ownership of ~/.docker directory..." "INFO"
-                                sudo chown -R "$USER":"$USER" "$HOME/.docker"
-                                sudo chmod -R g+rwx "$HOME/.docker"
-                            fi
-                            if command -v sg &>/dev/null; then
-                                print_message "Reloading script with new permissions..." "GOOD"
-                                local args_str=""
-                                printf -v args_str "%q " "$@"
-                                export CONTAINER_MONITOR_RELOADED=true
-                                exec sg docker -c "$0 $args_str"
-                            else
-                                print_message "Could not auto-reload. Please run 'newgrp docker' or log out and back in." "WARNING"
-                                exit 0
-                            fi
-                        else
-                            print_message "Failed to add user to group. Please run: sudo usermod -aG docker $USER" "DANGER"
-                            manual_install_needed=true
-                        fi
-                    else
-                        print_message "Skipping permission fix." "WARNING"
-                        print_message "To fix manually, run: sudo usermod -aG docker \$USER" "INFO"
-                        print_message "Then log out and back in." "INFO"
-                        manual_install_needed=true
-                    fi
-                else
-                    print_message "Cannot fix permissions interactively. To fix, run: sudo usermod -aG docker $USER" "DANGER"
-                    manual_install_needed=true
-                fi
-            fi
-        fi
-    fi
-    for cmd in "${!deps[@]}"; do
-        if ! command -v "$cmd" &>/dev/null; then
-            missing_pkgs+=("${deps[$cmd]}")
-        fi
-    done
-    if [ ${#missing_pkgs[@]} -gt 0 ]; then
-        print_message "The following required packages are missing: ${missing_pkgs[*]}" "DANGER"
-        if [ -t 0 ]; then
-            if [ -n "$pkg_manager" ]; then
-                read -rp "Would you like to attempt to install them now? (y/n): " response
-                if [[ "$response" =~ ^[yY]$ ]]; then
-                    print_message "Attempting to install with 'sudo $pkg_manager'... You may be prompted for your password." "INFO"
-                    local install_success=false
-                    if [ "$pkg_manager" == "apt" ]; then
-                       sudo apt-get update && sudo apt-get install -y "${missing_pkgs[@]}" && install_success=true
-                    else
-                       sudo "$pkg_manager" install -y "${missing_pkgs[@]}" && install_success=true
-                    fi
-                    if [ "$install_success" = true ]; then
-                        print_message "Package manager dependencies installed successfully." "GOOD"
-                    else
-                        print_message "Failed to install dependencies. Please install them manually." "DANGER"
-                        manual_install_needed=true
-                    fi
-                else
-                    print_message "Installation cancelled. Please install dependencies manually." "DANGER"
-                    manual_install_needed=true
-                fi
-            else
-                print_message "No supported package manager (apt/dnf/yum) found. Please install packages manually." "DANGER"
-                manual_install_needed=true
-            fi
-        else
-            print_message "Cannot install interactively. Please install the packages manually." "DANGER"
-            manual_install_needed=true
-        fi
-    fi
-    _install_yq() {
-        local arch_to_install="$1"
-        local tag_to_install="$2"
-        print_message "Attempting to download yq... You may be prompted for your password." "INFO"
-        if [ -z "$tag_to_install" ]; then
-             tag_to_install=$(curl -sL -o /dev/null -w "%{url_effective}" "https://github.com/mikefarah/yq/releases/latest" | xargs basename 2>/dev/null)
-        fi
-        if [ -z "$tag_to_install" ]; then
-            print_message "Failed to get the latest yq version tag from GitHub." "DANGER"
-            return 1
-        fi
-        local yq_url="https://github.com/mikefarah/yq/releases/download/${tag_to_install}/yq_linux_${arch_to_install}"
-        if sudo curl -fsSL --connect-timeout 15 "$yq_url" -o /usr/local/bin/yq && sudo chmod +x /usr/local/bin/yq; then
-            print_message "yq installed/updated successfully to ${tag_to_install}." "GOOD"
-            return 0
-        else
-            print_message "Failed to download or install yq. Please do so manually." "DANGER"
-            return 1
-        fi
-    }
-    if ! command -v yq &>/dev/null; then
-        print_message "yq is not installed. It is required for parsing config.yml." "DANGER"
-        if [ "$arch" == "unsupported" ]; then
-            print_message "Your system architecture ($(uname -m)) is not supported for automatic yq installation. Please install it manually." "DANGER"
-            manual_install_needed=true
-        elif [ -t 0 ]; then
-            read -rp "Would you like to download the latest version for your architecture ($arch) now? (y/n): " response
-            if [[ "$response" =~ ^[yY]$ ]]; then
-                if ! _install_yq "$arch" ""; then
-                    manual_install_needed=true
-                fi
-            else
-                print_message "Installation cancelled. The script requires yq to function." "DANGER"
-                manual_install_needed=true
-            fi
-        else
-            print_message "yq is missing. Cannot install interactively. Please install it manually." "DANGER"
-            manual_install_needed=true
-        fi
-    else
-        print_message "Checking for yq updates..." "INFO"
-        local local_yq_version; local_yq_version=$(yq --version | awk '{print $NF}')
-        local latest_yq_tag; latest_yq_tag=$(curl -sL -o /dev/null -w "%{url_effective}" "https://github.com/mikefarah/yq/releases/latest" | xargs basename 2>/dev/null)
-        if [[ -n "$latest_yq_tag" && "$local_yq_version" != "$latest_yq_tag" ]]; then
-            if [ -t 0 ]; then
-                local api_url="https://api.github.com/repos/mikefarah/yq/releases/tags/${latest_yq_tag}"
-                local release_notes
-                release_notes=$(curl -sL "$api_url" | jq -r '.body // "Could not retrieve release notes."')
-                echo
-                print_message "A new version of yq is available!" "WARNING"
-                echo -e "  ${COLOR_CYAN}Current Version:${COLOR_RESET} $local_yq_version"
-                echo -e "  ${COLOR_GREEN}New Version:    ${COLOR_RESET} $latest_yq_tag"
-                echo
-                echo -e "  ${COLOR_YELLOW}Release Notes for ${latest_yq_tag}:${COLOR_RESET}"
-                echo -e "    ${release_notes//$'\n'/$'\n'    }"
-                echo
-                read -rp "Would you like to update yq now? (y/n): " response
-                if [[ "$response" =~ ^[yY]$ ]]; then
-                    _install_yq "$arch" "$latest_yq_tag"
-                else
-                    print_message "yq update skipped. Continuing with old version." "INFO"
-                fi
-            else
-                local update_msg="A new version of yq is available: ${latest_yq_tag} (you have ${local_yq_version})."
-                print_message "$update_msg" "WARNING"
-                print_message "To update, run the script manually from your terminal." "INFO"
-                local notif_title; notif_title="⚠️ Dependency Update Recommended on $(hostname)"
-                send_notification "$update_msg" "$notif_title"
-            fi
-        elif [ -n "$local_yq_version" ]; then
-            print_message "yq is up-to-date (version ${local_yq_version})." "GOOD"
-        else
-            print_message "Could not determine local yq version. Skipping update check." "WARNING"
-        fi
-    fi
-    if [ "$manual_install_needed" = true ]; then
-        print_message "Please address the missing dependencies listed above before running the script again." "DANGER"
-        exit 1
-    fi
-    if [ ${#missing_pkgs[@]} -eq 0 ] && command -v yq &>/dev/null; then
-        print_message "All required dependencies are installed." "GOOD"
-    fi
-}
+
 run_setup_check() {
     print_message "--- Running Setup & Dependency Check ---" "INFO"
     local all_ok=true
@@ -593,385 +357,7 @@ run_setup_check() {
         return 1
     fi
 }
-setup_automated_schedule() {
-    print_message "--- Container Monitor Automation Setup ---" "INFO"
-    echo
-    local SCRIPT_PATH
-    SCRIPT_PATH="$SCRIPT_DIR/$(basename "$0")"
-    if [ ! -f "$SCRIPT_PATH" ]; then
-        print_message "Error: Cannot determine script path." "DANGER"
-        return 1
-    fi
-    print_message "Script location: $SCRIPT_PATH" "INFO"
-    echo
-    echo -e "${COLOR_CYAN}What task do you want to schedule?${COLOR_RESET}"
-    echo "  1) Standard Monitoring (Checks health, resources, and sends alerts)"
-    echo "  2) Auto-Updater (Automatically updates and recreates containers)"
-    echo
-    local task_type="monitor"
-    local task_choice
-    read -rp "Enter your choice (1 or 2): " task_choice
-    case "$task_choice" in
-        1) task_type="monitor" ;;
-        2) task_type="update" ;;
-        *) print_message "Invalid choice." "DANGER"; return 1 ;;
-    esac
-    echo
-    echo -e "${COLOR_CYAN}Select scheduler type:${COLOR_RESET}"
-    echo "  1) cron (traditional, simple)"
-    echo "  2) systemd timer (modern, recommended for systemd-based systems)"
-    echo
-    read -rp "Enter your choice (1 or 2): " scheduler_choice
-    case "$scheduler_choice" in
-        1)
-            setup_cron_schedule "$SCRIPT_PATH" "$task_type"
-            ;;
-        2)
-            setup_systemd_timer "$SCRIPT_PATH" "$task_type"
-            ;;
-        *)
-            print_message "Invalid choice. Exiting." "DANGER"
-            return 1
-            ;;
-    esac
-}
-setup_cron_schedule() {
-    local script_path="$1"
-    local task_type="$2"
-    local job_name=""
-    if [ "$task_type" == "update" ]; then job_name="Auto-Update"; else job_name="Monitor"; fi
-    print_message "Setting up cron job for: $job_name" "INFO"
-    echo
-    if ! command -v crontab &>/dev/null; then
-        print_message "Error: crontab command not found. Please install cron first." "DANGER"
-        return 1
-    fi
-    echo -e "${COLOR_CYAN}Select frequency for $job_name:${COLOR_RESET}"
-    if [ "$task_type" == "update" ]; then
-        echo "  1) Once a day (at 04:00 AM) [Recommended]"
-        echo "  2) Once a week (Sunday at 04:00 AM)"
-        echo "  3) Custom"
-    else
-        echo "  1) Every 6 hours"
-        echo "  2) Every 12 hours"
-        echo "  3) Once a day (at midnight)"
-        echo "  4) Twice a day (at 6 AM and 6 PM)"
-        echo "  5) Custom"
-    fi
-    echo
-    read -rp "Enter your choice: " freq_choice
-    local cron_expression=""
-    local description=""
-    show_cron_guide() {
-        echo
-        echo -e "${COLOR_YELLOW}Cron expression format:${COLOR_RESET}"
-        echo "  ┌───────────── minute (0 - 59)"
-        echo "  │ ┌───────────── hour (0 - 23)"
-        echo "  │ │ ┌───────────── day of the month (1 - 31)"
-        echo "  │ │ │ ┌───────────── month (1 - 12)"
-        echo "  │ │ │ │ ┌───────────── day of the week (0 - 6) (Sunday to Saturday)"
-        echo "  │ │ │ │ │"
-        echo "  * * * * *"
-        echo
-        echo "Examples:"
-        echo "  0 */4 * * * - Every 4 hours"
-        echo "  30 2 * * * - At 2:30 AM every day"
-        echo "  0 9,17 * * 1-5  - At 9 AM and 5 PM on weekdays"
-        echo
-    }
-    if [ "$task_type" == "update" ]; then
-        case "$freq_choice" in
-            1) cron_expression="0 4 * * *"; description="daily at 04:00 AM" ;;
-            2) cron_expression="0 4 * * 0"; description="every Sunday at 04:00 AM" ;;
-            3)
-                show_cron_guide
-                read -rp "Enter your custom cron expression: " cron_expression
-                description="custom schedule ($cron_expression)"
-                ;;
-            *) print_message "Invalid choice." "DANGER"; return 1 ;;
-        esac
-    else
-        case "$freq_choice" in
-            1) cron_expression="0 */6 * * *"; description="every 6 hours" ;;
-            2) cron_expression="0 */12 * * *"; description="every 12 hours" ;;
-            3) cron_expression="0 0 * * *"; description="daily at midnight" ;;
-            4) cron_expression="0 6,18 * * *"; description="twice a day (6 AM/PM)" ;;
-            5)
-                show_cron_guide
-                read -rp "Enter your custom cron expression: " cron_expression
-                description="custom schedule ($cron_expression)"
-                ;;
-            *) print_message "Invalid choice." "DANGER"; return 1 ;;
-        esac
-    fi
-    local cron_command=""
-    if [ "$task_type" == "update" ]; then
-        cron_command="$cron_expression $script_path --auto-update > /dev/null 2>&1"
-    else
-        cron_command="$cron_expression $script_path --summary >> $LOG_FILE 2>&1"
-    fi
-    echo
-    print_message "The following cron job will be added:" "INFO"
-    echo -e "  ${COLOR_YELLOW}$cron_command${COLOR_RESET}"
-    echo -e "  ${COLOR_CYAN}(Runs $description)${COLOR_RESET}"
-    echo
-    read -rp "Do you want to proceed? (y/n): " confirm
-    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
-        print_message "Installation cancelled." "WARNING"
-        return 0
-    fi
-    local search_term="$script_path"
-    if [ "$task_type" == "update" ]; then search_term="--auto-update"; else search_term="--summary"; fi
-    local existing_cron
-    existing_cron=$(crontab -l 2>/dev/null | grep -F "$script_path" | grep -F -- "$search_term" || true)
-    if [ -n "$existing_cron" ]; then
-        print_message "Found existing $job_name job:" "WARNING"
-        echo -e "  ${COLOR_YELLOW}$existing_cron${COLOR_RESET}"
-        echo
-        read -rp "Replace it? (y/n): " replace
-        if [[ "$replace" =~ ^[yY]$ ]]; then
-            (crontab -l 2>/dev/null | grep -vF -- "$search_term") | crontab - 2>/dev/null
-            print_message "Old job removed." "GOOD"
-        else
-            print_message "Keeping existing cron job. No changes made." "INFO"
-            return 0
-        fi
-    fi
-    (crontab -l 2>/dev/null; echo "$cron_command") | crontab -
-    if [ $? -eq 0 ]; then
-        print_message "$job_name cron job installed successfully!" "GOOD"
-        echo
-        print_message "Your container monitor will now run $description" "INFO"
-        print_message "Logs will be written to: $LOG_FILE" "INFO"
-        echo
-        print_message "To view or edit your cron jobs, run: crontab -e" "INFO"
-        print_message "To remove this cron job, run: crontab -e and delete the line containing '$script_path'" "INFO"
-    else
-        print_message "Failed to install cron job." "DANGER"
-        return 1
-    fi
-}
-setup_systemd_timer() {
-    local script_path="$1"
-    local task_type="$2"
-    local job_name=""
-    local service_suffix=""
-    local cmd_flag=""
-    if [ "$task_type" == "update" ]; then
-        job_name="Auto-Updater"
-        service_suffix="-update"
-        cmd_flag="--auto-update"
-    else
-        job_name="Monitor"
-        service_suffix=""
-        cmd_flag="--summary"
-    fi
-    print_message "Setting up systemd timer for: $job_name" "INFO"
-    echo
-    if ! command -v systemctl &>/dev/null; then
-        print_message "Error: systemctl command not found. This system may not use systemd." "DANGER"
-        print_message "Please use the cron option instead." "INFO"
-        return 1
-    fi
-    local use_user_service=false
-    local systemd_dir=""
-    local systemctl_cmd="systemctl"
 
-    echo -e "${COLOR_CYAN}Install as:${COLOR_RESET}"
-    echo "  1) System service (requires root/sudo, runs for all users)"
-    echo "  2) User service (runs only for current user, no sudo required)"
-    echo
-    read -rp "Enter your choice (1 or 2): " service_type
-
-    case "$service_type" in
-        1)
-            systemd_dir="/etc/systemd/system"
-            systemctl_cmd="sudo systemctl"
-            ;;
-        2)
-            use_user_service=true
-            systemd_dir="${HOME}/.config/systemd/user"
-            systemctl_cmd="systemctl --user"
-            mkdir -p "$systemd_dir"
-            ;;
-        *)
-            print_message "Invalid choice. Exiting." "DANGER"
-            return 1
-            ;;
-    esac
-
-    # Helper for the OnCalendar guide
-    show_timer_guide() {
-        echo
-        echo -e "${COLOR_YELLOW}Systemd timer OnCalendar format examples:${COLOR_RESET}"
-        echo "  hourly              - Every hour"
-        echo "  daily               - Every day at midnight"
-        echo "  weekly              - Every week on Monday at midnight"
-        echo "  *-*-* 00/2:00:00    - Every 2 hours"
-        echo "  *-*-* 08:00:00      - Every day at 8 AM"
-        echo "  Mon,Fri 09:00:00    - Mondays and Fridays at 9 AM"
-        echo
-        echo "For more info: https://www.freedesktop.org/software/systemd/man/systemd.time.html"
-        echo
-    }
-    echo
-    echo -e "${COLOR_CYAN}Select frequency for $job_name:${COLOR_RESET}"
-    local freq_choice
-    local timer_oncalendar=""
-    local description=""
-    if [ "$task_type" == "update" ]; then
-        echo "  1) Once a day (at 04:00 AM) [Recommended]"
-        echo "  2) Custom"
-        echo
-        read -rp "Enter your choice (1 or 2): " freq_choice
-        case "$freq_choice" in
-            1) timer_oncalendar="*-*-* 04:00:00"; description="daily at 04:00 AM" ;;
-            2)
-                show_timer_guide
-                read -rp "Enter your custom OnCalendar value: " timer_oncalendar
-                description="custom schedule ($timer_oncalendar)"
-                ;;
-            *) print_message "Invalid choice." "DANGER"; return 1 ;;
-        esac
-    else
-        echo "  1) Every 6 hours"
-        echo "  2) Every 12 hours"
-        echo "  3) Once a day (at midnight)"
-        echo "  4) Twice a day (at 6 AM and 6 PM)"
-        echo "  5) Every 4 hours"
-        echo "  6) Custom interval"
-        echo
-        read -rp "Enter your choice (1-6): " freq_choice
-        case "$freq_choice" in
-            1) timer_oncalendar="*-*-* 00/6:00:00"; description="every 6 hours" ;;
-            2) timer_oncalendar="*-*-* 00/12:00:00"; description="every 12 hours" ;;
-            3) timer_oncalendar="daily"; description="once a day at midnight" ;;
-            4) timer_oncalendar="*-*-* 06,18:00:00"; description="twice a day at 6 AM and 6 PM" ;;
-            5) timer_oncalendar="*-*-* 00/4:00:00"; description="every 4 hours" ;;
-            6)
-                show_timer_guide
-                read -rp "Enter your custom OnCalendar value: " timer_oncalendar
-                description="custom schedule ($timer_oncalendar)"
-                ;;
-            *) print_message "Invalid choice." "DANGER"; return 1 ;;
-        esac
-    fi
-    local service_name="container-monitor${service_suffix}"
-    local service_file="${systemd_dir}/${service_name}.service"
-    local timer_file="${systemd_dir}/${service_name}.timer"
-    local service_content="[Unit]
-Description=Docker Container ${job_name}
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=$script_path $cmd_flag
-StandardOutput=append:$LOG_FILE
-StandardError=append:$LOG_FILE"
-
-    if [ "$use_user_service" = true ]; then
-        service_content="[Unit]
-Description=Docker Container ${job_name}
-After=docker.service
-
-[Service]
-Type=oneshot
-ExecStart=$script_path $cmd_flag
-StandardOutput=append:$LOG_FILE
-StandardError=append:$LOG_FILE
-
-[Install]
-WantedBy=default.target"
-    else
-        service_content+="\n\n[Install]\nWantedBy=multi-user.target"
-    fi
-
-    local timer_content="[Unit]
-Description=Timer for Docker Container ${job_name}
-Requires=${service_name}.service
-
-[Timer]
-OnCalendar=$timer_oncalendar
-Persistent=true
-
-[Install]
-WantedBy=timers.target"
-
-    echo
-    print_message "The following systemd units will be created:" "INFO"
-    echo
-    echo -e "${COLOR_YELLOW}Service file: $service_file${COLOR_RESET}"
-    echo "$service_content"
-    echo
-    echo -e "${COLOR_YELLOW}Timer file: $timer_file${COLOR_RESET}"
-    echo "$timer_content"
-    echo
-    echo -e "  ${COLOR_CYAN}(Runs $description)${COLOR_RESET}"
-    echo
-    read -rp "Do you want to proceed? (y/n): " confirm
-    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
-        print_message "Installation cancelled." "WARNING"
-        return 0
-    fi
-    if [ -f "$service_file" ] || [ -f "$timer_file" ]; then
-        print_message "Systemd units already exist for this service." "WARNING"
-        read -rp "Do you want to replace them? (y/n): " replace
-        if [[ ! "$replace" =~ ^[yY]$ ]]; then
-            print_message "Installation cancelled." "WARNING"
-            return 0
-        fi
-        $systemctl_cmd stop ${service_name}.timer 2>/dev/null || true
-        $systemctl_cmd disable ${service_name}.timer 2>/dev/null || true
-    fi
-    if [ "$use_user_service" = true ]; then
-        echo -e "$service_content" > "$service_file"
-        echo -e "$timer_content" > "$timer_file"
-    else
-        echo -e "$service_content" | sudo tee "$service_file" > /dev/null
-        echo -e "$timer_content" | sudo tee "$timer_file" > /dev/null
-    fi
-
-    if [ $? -ne 0 ]; then
-        print_message "Failed to create systemd unit files." "DANGER"
-        return 1
-    fi
-    print_message "Systemd unit files created successfully." "GOOD"
-    print_message "Reloading systemd daemon..." "INFO"
-    $systemctl_cmd daemon-reload
-
-    if [ $? -ne 0 ]; then
-        print_message "Failed to reload systemd daemon." "DANGER"
-        return 1
-    fi
-    print_message "Enabling and starting the timer..." "INFO"
-    $systemctl_cmd enable ${service_name}.timer
-    $systemctl_cmd start ${service_name}.timer
-    if [ $? -eq 0 ]; then
-        print_message "Systemd timer installed and started successfully!" "GOOD"
-        echo
-        print_message "Your container monitor will now run $description" "INFO"
-        print_message "Logs will be written to: $LOG_FILE" "INFO"
-        echo
-        echo -e "${COLOR_CYAN}Useful commands:${COLOR_RESET}"
-        echo "  View timer status:  $systemctl_cmd status ${service_name}.timer"
-        echo "  View service logs:  $systemctl_cmd status ${service_name}.service"
-        if [ "$use_user_service" = false ]; then
-            echo "  View journal logs:  sudo journalctl -u ${service_name}.service"
-        else
-            echo "  View journal logs:  journalctl --user -u ${service_name}.service"
-        fi
-        echo "  Stop timer:         $systemctl_cmd stop ${service_name}.timer"
-        echo "  Disable timer:      $systemctl_cmd disable ${service_name}.timer"
-        echo "  Test service now:   $systemctl_cmd start ${service_name}.service"
-        echo
-        print_message "Next scheduled run:" "INFO"
-        $systemctl_cmd list-timers ${service_name}.timer
-    else
-        print_message "Failed to enable/start systemd timer." "DANGER"
-        return 1
-    fi
-}
 print_message() {
     local message="$1"
     local color_type="$2"
@@ -1124,82 +510,16 @@ send_healthchecks_job_ping() {
     *)     : ;;
   esac
   if [[ -n "$body" ]]; then
-    (curl -fsS --connect-timeout 3 -m 8 --retry 1 \
+    curl -fsS --connect-timeout 5 -m 10 --retry 2 \
       --data-raw "$body" "$endpoint" >/dev/null 2>&1 || \
-      print_message "Healthchecks: job ping '$status' failed (curl)." "WARNING") &
+      print_message "Healthchecks: job ping '$status' failed (curl)." "WARNING"
   else
-    (curl -fsS --connect-timeout 3 -m 8 --retry 1 \
+    curl -fsS --connect-timeout 5 -m 10 --retry 2 \
       "$endpoint" >/dev/null 2>&1 || \
-      print_message "Healthchecks: job ping '$status' failed (curl)." "WARNING") &
+      print_message "Healthchecks: job ping '$status' failed (curl)." "WARNING"
   fi
 }
-self_update() {
-    local latest_version="$1"
-    local repo_owner="buildplan"
-    local repo_name="container-monitor"
-    local api_url="https://api.github.com/repos/${repo_owner}/${repo_name}/releases/tags/${latest_version}"
-    local release_notes
-    if command -v jq &>/dev/null; then
-        release_notes=$(curl -sL "$api_url" | jq -r '.body // "Could not retrieve release notes."')
-    else
-        release_notes="jq is not installed, cannot fetch release notes."
-    fi
-    echo
-    print_message "A new version of the script is available!" "INFO"
-    echo -e "  ${COLOR_CYAN}Current Version:${COLOR_RESET} $VERSION"
-    echo -e "  ${COLOR_GREEN}New Version:    ${COLOR_RESET} $latest_version"
-    echo
-    echo -e "  ${COLOR_YELLOW}Release Notes for ${latest_version}:${COLOR_RESET}"
-    echo -e "    ${release_notes//$'\n'/$'\n'    }"
-    echo
-    read -rp "Would you like to update now? (y/n): " response
-    if [[ ! "$response" =~ ^[yY]$ ]]; then
-        UPDATE_SKIPPED=true
-        print_message "Update skipped by user." "INFO"
-        return
-    fi
-    local temp_dir
-    temp_dir=$(mktemp -d)
-    if [ ! -d "$temp_dir" ]; then
-        print_message "Failed to create temporary directory. Update aborted." "DANGER"
-        exit 1
-    fi
-    trap 'rm -rf -- "$temp_dir"' EXIT
-    local temp_script; temp_script="$temp_dir/$(basename "$SCRIPT_URL")"
-    local temp_checksum; temp_checksum="$temp_dir/$(basename "$CHECKSUM_URL")"
-    print_message "Downloading new script version..." "INFO"
-    if ! curl -fsSL --connect-timeout 15 "$SCRIPT_URL" -o "$temp_script"; then
-        print_message "Failed to download the new script. Update aborted." "DANGER"
-        exit 1
-    fi
-    print_message "Downloading checksum..." "INFO"
-    if ! curl -fsSL --connect-timeout 15 "$CHECKSUM_URL" -o "$temp_checksum"; then
-        print_message "Failed to download the checksum file. Update aborted." "DANGER"
-        exit 1
-    fi
-    print_message "Verifying checksum..." "INFO"
-    (cd "$temp_dir" && sha256sum -c "$(basename "$CHECKSUM_URL")" --quiet)
-    if [ $? -ne 0 ]; then
-        print_message "Checksum verification failed! The downloaded file may be corrupt. Update aborted." "DANGER"
-        exit 1
-    fi
-    print_message "Checksum verified successfully." "GOOD"
-    print_message "Checking script syntax..." "INFO"
-    if ! bash -n "$temp_script"; then
-        print_message "Downloaded file is not a valid script. Update aborted." "DANGER"
-        exit 1
-    fi
-    print_message "Syntax check passed." "GOOD"
-    if ! mv "$temp_script" "$0"; then
-        print_message "Failed to replace the old script file. Update aborted." "DANGER"
-        exit 1
-    fi
-    chmod +x "$0"
-    trap - EXIT
-    rm -rf -- "$temp_dir"
-    print_message "Update successful. Please run the script again." "GOOD"
-    exit 0
-}
+
 run_with_retry() {
     local max_attempts=3
     local attempt=0
@@ -1577,8 +897,9 @@ check_logs() {
     docker_logs_cmd+=("$container_name")
     local raw_logs cli_stderr
     local tmp_err; tmp_err=$(mktemp)
-    raw_logs=$("${docker_logs_cmd[@]}" 2> "$tmp_err"); local docker_exit_code=$?
-    cli_stderr=$(<"$tmp_err")
+    raw_logs=$("${docker_logs_cmd[@]}" 2> "$tmp_err" | tr -d '\0')
+    local docker_exit_code; docker_exit_code=${PIPESTATUS[0]}
+    cli_stderr=$(tr -d '\0' < "$tmp_err")
     rm -f "$tmp_err"
     if [ -n "$cli_stderr" ]; then
         if [ $docker_exit_code -ne 0 ]; then
@@ -1683,49 +1004,7 @@ check_host_memory_usage() {
     fi
     echo "$output_string"
 }
-run_prune() {
-    echo
-    print_message "The prune command will run 'docker system prune -a'." "WARNING"
-    print_message "This will remove ALL unused containers, networks, images, and the build cache." "WARNING"
-    print_message "${COLOR_RED}This action is irreversible.${COLOR_RESET}" "NONE"
-    echo
-    local response
-    read -rp "Are you absolutely sure you want to continue? (y/n): " response
-    if [[ "$response" =~ ^[yY]$ ]]; then
-        print_message "Running 'docker system prune -a'..." "INFO"
-        docker system prune -a
-        print_message "Prune command completed." "GOOD"
-    else
-        print_message "Prune operation cancelled." "INFO"
-    fi
-}
-pull_new_image() {
-    local container_name_to_update="$1"
-    local update_details="$2"
-    print_message "Getting image details for '$container_name_to_update'..." "INFO"
-    local current_image_ref; current_image_ref=$(docker inspect -f '{{.Config.Image}}' "$container_name_to_update" 2>/dev/null)
-    local image_to_pull="$current_image_ref"
-    if [[ ! "$update_details" == *"New build found"* ]]; then
-        local image_name_no_tag="${current_image_ref%:*}"
-        local new_full_tag
-        new_full_tag=$(echo "$update_details" | sed -n 's/^Update available: \([^,]*\).*/\1/p')
-        if [ -n "$new_full_tag" ]; then
-             image_to_pull="${image_name_no_tag}:${new_full_tag}"
-        else
-            local new_version; new_version=$(echo "$update_details" | grep -oE '[v]?[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
-            if [ -n "$new_version" ]; then
-                image_to_pull="${image_name_no_tag}:${new_version}"
-            fi
-        fi
-    fi
-    print_message "Pulling new image: $image_to_pull" "INFO"
-    if docker pull "$image_to_pull"; then
-        print_message "Successfully pulled new image for '$container_name_to_update'." "GOOD"
-        print_message "  ${COLOR_YELLOW}ACTION REQUIRED:${COLOR_RESET} You now need to manually recreate the container to apply the update." "WARNING"
-    else
-        print_message "Failed to pull new image for '$container_name_to_update'." "DANGER"
-    fi
-}
+
 is_rolling_tag() {
     local image_ref="$1"
     if [[ "$image_ref" != *":"* ]]; then
@@ -1737,184 +1016,7 @@ is_rolling_tag() {
         return 1
     fi
 }
-process_container_update() {
-    local container_name="$1"
-    local update_details="$2"
-    print_message "Starting guided update for '$container_name'..." "INFO"
-    local inspect_json; inspect_json=$(docker inspect "$container_name" 2>/dev/null)
-    if [ -z "$inspect_json" ]; then print_message "Failed to inspect container '$container_name'." "DANGER"; return 1; fi
-    local working_dir; working_dir=$(jq -r '.[0].Config.Labels["com.docker.compose.project.working_dir"] // ""' <<< "$inspect_json")
-    local service_name; service_name=$(jq -r '.[0].Config.Labels["com.docker.compose.service"] // ""' <<< "$inspect_json")
-    local config_files; config_files=$(jq -r '.[0].Config.Labels["com.docker.compose.project.config_files"] // ""' <<< "$inspect_json")
-    local current_image_ref; current_image_ref=$(jq -r '.[0].Config.Image' <<< "$inspect_json")
-    if [ -z "$working_dir" ] || [ -z "$service_name" ]; then
-        print_message "Cannot auto-recreate '$container_name'. Not managed by a known docker-compose version." "DANGER"
-        pull_new_image "$container_name" "$update_details"
-        return
-    fi
-    local compose_cmd_base=("docker" "compose")
-    if [ -n "$config_files" ]; then
-        IFS=',' read -r -a files_array <<< "$config_files"
-        for file in "${files_array[@]}"; do compose_cmd_base+=("-f" "$file"); done
-    fi
-    if is_rolling_tag "$current_image_ref" || [[ "$update_details" == *"New build found"* ]]; then
-        print_message "Image uses a rolling tag. Proceeding with standard pull and recreate." "INFO"
-        (
-            cd "$working_dir" || exit 1
-            if "${compose_cmd_base[@]}" pull "$service_name" < /dev/null && \
-               "${compose_cmd_base[@]}" up -d --force-recreate "$service_name" < /dev/null; then
-                print_message "Container '$container_name' successfully updated. ✅" "GOOD"
-            else
-                print_message "An error occurred during the update of '$container_name'." "DANGER"
-            fi
-        )
-        return
-    fi
-    local image_name_no_tag="${current_image_ref%:*}"
-    local new_version
-    new_version=$(echo "$update_details" | sed -n 's/^Update available: \([^,]*\).*/\1/p')
-    if [ -z "$new_version" ]; then
-        new_version=$(echo "$update_details" | grep -oE '[v]?[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)
-    fi
-    if [ -z "$new_version" ]; then
-        print_message "Could not determine the new version for '$container_name'. Cannot proceed." "DANGER"
-        return 1
-    fi
-    local new_image_ref="${image_name_no_tag}:${new_version}"
-    print_message "Pulling new image '${new_image_ref}'..." "INFO"
-    if ! docker pull "$new_image_ref"; then
-        print_message "Failed to pull new image '${new_image_ref}'. Aborting update." "DANGER"
-        return 1
-    fi
-    print_message "Successfully pulled new image." "GOOD"
-    print_message " ⚠ ${COLOR_YELLOW}The new image has been pulled. Now, the compose file must be updated to use it.${COLOR_RESET}" "WARNING"
-    echo
-    local main_compose_file="${config_files%%,*}"
-    local full_compose_path
-    if [[ "$main_compose_file" == /* ]]; then
-        full_compose_path="$main_compose_file"
-    else
-        full_compose_path="$working_dir/$main_compose_file"
-    fi
-    print_message "GUIDE: In the file, change the image tag to version: ${COLOR_GREEN}${new_version}${COLOR_RESET}" "INFO"
-    echo
-    local edit_response
-    read -rp "Would you like to open '${full_compose_path}' now to edit the tag? (y/n): " edit_response < /dev/tty
-    if [[ "$edit_response" =~ ^[yY]$ ]]; then
-        local editor_cmd
-        if [ -n "${VISUAL:-}" ]; then
-            editor_cmd="$VISUAL"
-        elif [ -n "${EDITOR:-}" ]; then
-            editor_cmd="$EDITOR"
-        elif command -v nano &>/dev/null; then
-            editor_cmd="nano"
-        else
-            editor_cmd="/usr/bin/vi"
-        fi
-        "$editor_cmd" "$full_compose_path" < /dev/tty
-        print_message "Verifying changes in compose file..." "INFO"
-        if ! grep -q -E "image:.*:${new_version}" "$full_compose_path"; then
-            print_message "Verification failed. The new image tag '${new_version}' was not found in the file." "DANGER"
-            print_message "Please apply the changes manually and run 'docker compose up -d'." "WARNING"
-            return
-        fi
-        print_message "Verification successful!" "GOOD"
-        local apply_response
-        echo
-        read -rp "${COLOR_YELLOW}File closed. Recreate '${container_name}' now to apply the changes? (y/n): ${COLOR_RESET}" apply_response < /dev/tty
-        echo
-        if [[ "$apply_response" =~ ^[yY]$ ]]; then
-            print_message "Applying changes by recreating the container..." "INFO"
-            (
-                cd "$working_dir" || exit 1
-                if "${compose_cmd_base[@]}" up -d --force-recreate "$service_name" < /dev/null; then
-                     print_message "Container '$container_name' successfully updated with new version. ✅" "GOOD"
-                else
-                     print_message "An error occurred while recreating '$container_name'." "DANGER"
-                fi
-            )
-        else
-            print_message "Changes not applied. Please run 'docker compose up -d' in '${working_dir}' manually." "WARNING"
-        fi
-    else
-        print_message "Manual edit skipped. Please edit '${full_compose_path}' and run 'docker compose up -d' manually." "WARNING"
-    fi
-}
-run_interactive_update_mode() {
-    print_message "Starting interactive update check..." "INFO"
-    local containers_with_updates=()
-    local container_update_details=()
-    if [ ! -f "$STATE_FILE" ] || ! jq -e . "$STATE_FILE" >/dev/null 2>&1; then
-        print_message "State file is missing or invalid. Creating a new one." "INFO"
-        echo '{"updates": {}, "restarts": {}, "logs": {}}' > "$STATE_FILE"
-    fi
-    local state_json; state_json=$(cat "$STATE_FILE")
-    mapfile -t all_containers < <(docker container ls --format '{{.Names}}' 2>/dev/null)
-    if [ ${#all_containers[@]} -eq 0 ]; then
-        print_message "No running containers found to check." "INFO"
-        return
-    fi
-    print_message "Checking ${#all_containers[@]} containers for available updates..." "NONE"
-    for container in "${all_containers[@]}"; do
-        local current_image; current_image=$(docker inspect -f '{{.Config.Image}}' "$container" 2>/dev/null)
-        local update_details; update_details=$(check_for_updates "$container" "$current_image" "$state_json")
-        if [ $? -eq 100 ]; then
-            containers_with_updates+=("$container")
-            container_update_details+=("$update_details")
-        fi
-    done
-    if [ ${#containers_with_updates[@]} -eq 0 ]; then
-        print_message "All containers are up-to-date. Nothing to do. ✅" "GOOD"
-        return
-    fi
-    print_message "The following containers have updates available:" "INFO"
-    for i in "${!containers_with_updates[@]}"; do
-        echo -e "  ${COLOR_CYAN}[$((i + 1))]${COLOR_RESET} ${containers_with_updates[i]} (${COLOR_YELLOW}${container_update_details[i]}${COLOR_RESET})"
-    done
-    echo ""
-    read -rp "Enter the number(s) of the containers to update (e.g., '1' or '1,3'), or 'all', or press Enter to cancel: " choice
-    if [ -z "$choice" ]; then
-        print_message "Update cancelled by user." "INFO"
-        return
-    fi
-    local selections_to_process=()
-    local details_to_process=()
-    if [ "$choice" == "all" ]; then
-            selections_to_process=("${containers_with_updates[@]}")
-            details_to_process=("${container_update_details[@]}")
-    else
-        IFS=',' read -r -a selections <<< "$choice"
-        for sel in "${selections[@]}"; do
-            if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le "${#containers_with_updates[@]}" ]; then
-            local index=$((sel - 1))
-            selections_to_process+=("${containers_with_updates[$index]}")
-            details_to_process+=("${container_update_details[$index]}")
-            else
-                print_message "Invalid selection: '$sel'. Skipping." "DANGER"
-            fi
-        done
-    fi
-        for i in "${!selections_to_process[@]}"; do
-            local container_to_update="${selections_to_process[$i]}"
-            local details_for_this_container="${details_to_process[$i]}"
-            if [ "$RECREATE_MODE" = true ]; then
-                process_container_update "$container_to_update" "$details_for_this_container"
-            else
-                pull_new_image "$container_to_update" "$details_for_this_container"
-            fi
-        done
-    echo
-    if [[ "${RECREATE_MODE}" == "true" ]]; then
-        local prune_choice
-        read -rp "${COLOR_YELLOW}Update process finished. Would you like to clean up the system now? (y/n) ${COLOR_RESET}" prune_choice
-        if [[ "${prune_choice}" =~ ^[yY]$ ]]; then
-            print_message "Waiting 5 seconds for Docker daemon to settle before pruning..." "INFO"
-            sleep 5
-            run_prune
-        fi
-    fi
-    print_message "Interactive update process finished." "INFO"
-}
+
 print_summary() {
     local total_containers_checked="$1"
     local container_name_summary issues
@@ -2150,6 +1252,7 @@ run_auto_update_mode() {
 }
 
 # --- Main Execution ---
+# --- Main Execution ---
 main() {
     # --- Argument Parsing ---
     local ORIGINAL_ARGS=("$@")
@@ -2158,12 +1261,9 @@ main() {
     local ACTION="monitor" # Default action
     local LOG_TARGET=""
     declare -a LOG_PATTERNS=()
-    local run_update_check=true
-    local force_update_check=false
 
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            # --- Behavior-modifying flags ---
             --exclude=*)
                 local EXCLUDE_STR="${1#*=}"
                 IFS=',' read -r -a CONTAINERS_TO_EXCLUDE <<< "$EXCLUDE_STR"
@@ -2173,54 +1273,15 @@ main() {
                 FORCE_UPDATE_CHECK=true
                 shift
                 ;;
-            --force-update)
-                force_update_check=true
-                shift
-                ;;
-            --no-update)
-                run_update_check=false
-                shift
-                ;;
             --summary)
                 SUMMARY_ONLY_MODE=true
                 shift
                 ;;
-            --auto-update)
-                if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions." "DANGER"; return 1; fi
-                ACTION="auto-update"
-                shift
-                ;;
-
-            # --- Action flags (only one can be used) ---
-            --check-setup)
-                if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions." "DANGER"; return 1; fi
-                ACTION="check-setup"
-                shift
-                ;;
-            --setup-timer)
-                if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions." "DANGER"; return 1; fi
-                ACTION="setup-timer"
-                shift
-                ;;
-            --update|--pull)
-                if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions like --update and --logs." "DANGER"; return 1; fi
-                ACTION="interactive-update"
-                if [[ "$1" == "--update" ]]; then RECREATE_MODE=true; fi
-                INTERACTIVE_UPDATE_MODE=true
-                shift
-                ;;
-            --prune)
-                if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions like --prune and --logs." "DANGER"; return 1; fi
-                ACTION="prune"
-                shift
-                ;;
             --logs)
-                if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions like --logs and --update." "DANGER"; return 1; fi
                 ACTION="logs"
                 shift
                 if [ "$#" -eq 0 ] || [[ "$1" == --* ]]; then
                     print_message "Error: The --logs flag requires a container name." "DANGER"
-                    print_message "Example Usage: $0 --logs my-container error" "INFO"
                     return 1
                 fi
                 LOG_TARGET="$1"
@@ -2231,26 +1292,21 @@ main() {
                 done
                 ;;
             --save-logs)
-                 if [[ "$ACTION" != "monitor" ]]; then print_message "Error: Cannot combine actions like --save-logs and --update." "DANGER"; return 1; fi
                  ACTION="save-logs"
                  shift
                  if [[ -z "$1" || "$1" == --* ]]; then print_message "Error: --save-logs requires a container name." "DANGER"; return 1; fi
                  LOG_TARGET="$1"
                  shift
                 ;;
-
-            # --- Help and Error Handling ---
             -h|--help)
                 print_help
                 return 0
                 ;;
             -*)
                 print_message "Unknown option: $1" "DANGER"
-                print_help
                 return 1
                 ;;
             *)
-                # Collect container names for the default 'monitor' action
                 CONTAINER_ARGS+=("$1")
                 shift
                 ;;
@@ -2258,7 +1314,6 @@ main() {
     done
 
     # --- Initial Setup ---
-    # Log Separation
     if [ -f "$LOG_FILE" ] && [ -s "$LOG_FILE" ]; then
         {
             echo ""
@@ -2267,43 +1322,16 @@ main() {
         } >> "$LOG_FILE" 2>/dev/null || true
     fi
 
-    check_and_install_dependencies "${ORIGINAL_ARGS[@]}"
+    # Load config (Dependencies and Self-Update checks removed)
     load_configuration
-
-    # --- Self-Update Check ---
-    if [[ "$force_update_check" == true || ("$run_update_check" == true && -t 1) ]]; then
-        if [[ "$SCRIPT_URL" != *"your-username/your-repo"* ]]; then
-            local latest_version
-            latest_version=$(curl -sL "$SCRIPT_URL" | grep -m 1 "VERSION=" | cut -d'"' -f2)
-            if [[ -n "$latest_version" && "$VERSION" != "$latest_version" ]]; then
-                self_update "$latest_version"
-            fi
-        fi
-    fi
 
     # --- Action Execution ---
     case "$ACTION" in
-        "check-setup")
-            run_setup_check
-            ;;
-        setup-timer)
-            setup_automated_schedule
-            return $?
-            ;;
-        "prune")
-            run_prune
-            ;;
-        "interactive-update")
-            run_interactive_update_mode
-            ;;
         "logs")
             if [ ${#LOG_PATTERNS[@]} -eq 0 ]; then
-                print_message "--- Showing all recent logs for '$LOG_TARGET' ---" "INFO"
                 docker logs --tail "$LOG_LINES_TO_CHECK" "$LOG_TARGET"
             else
                 local egrep_pattern; egrep_pattern=$(IFS='|'; echo "${LOG_PATTERNS[*]}")
-                local filter_list; filter_list=$(printf "'%s' " "${LOG_PATTERNS[@]}")
-                print_message "--- Filtering logs for '$LOG_TARGET' with patterns: ${filter_list}---" "INFO"
                 docker logs --tail "$LOG_LINES_TO_CHECK" "$LOG_TARGET" 2>&1 | grep -E -i --color=auto "$egrep_pattern"
             fi
             ;;
@@ -2312,9 +1340,6 @@ main() {
             ;;
         "monitor")
             perform_monitoring "${CONTAINER_ARGS[@]}"
-            ;;
-        "auto-update")
-            run_auto_update_mode
             ;;
     esac
 }

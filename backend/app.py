@@ -14,7 +14,7 @@ app = FastAPI(title="Container Monitor API")
 scheduler = AsyncIOScheduler()
 
 DATA_DIR  = Path(os.environ.get("DATA_DIR", "/app/data"))
-SCRIPT    = Path("/app/container-monitor.sh")
+SCRIPT    = Path("/app/backend/container-monitor.sh")
 STATE_F   = DATA_DIR / ".monitor_state.json"
 CONFIG_F  = DATA_DIR / "config.yml"
 LOG_F     = DATA_DIR / "container-monitor.log"
