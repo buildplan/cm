@@ -1,16 +1,10 @@
 # 1: Builder Stage
 FROM alpine:3.23 AS builder
 
-RUN apk add --no-cache python3 py3-pip curl
-
+RUN apk add --no-cache python3 py3-pip
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip3 install --no-cache-dir --compile fastapi uvicorn apscheduler pyyaml
-
-ARG TARGETARCH=amd64
-RUN curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" -o /yq \
-    && chmod +x /yq
-
 RUN pip3 uninstall -y pip setuptools \
     && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
@@ -18,10 +12,9 @@ RUN pip3 uninstall -y pip setuptools \
 FROM alpine:3.23
 
 RUN apk upgrade --no-cache && apk add --no-cache \
-    bash jq skopeo curl docker-cli docker-cli-compose tzdata python3
+    bash jq yq skopeo curl docker-cli docker-cli-compose tzdata python3
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /yq /usr/local/bin/yq
 
 ENV PATH="/opt/venv/bin:$PATH"
 
