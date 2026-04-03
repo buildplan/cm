@@ -65,7 +65,7 @@ notifications:
     webhook_url: "https://discord.com/api/webhooks/xxxxxxxx"
 
   generic:
-    webhook_url: "" 
+    webhook_url: ""
 
   ntfy:
     server_url: "https://ntfy.sh"
@@ -98,8 +98,8 @@ __DYNAMIC_MONITOR_DEFAULTS__
 
   exclude:
     updates:
-      - my-local-app-1     
-      - my-backend-api     
+      - my-local-app-1
+      - my-backend-api
 
 auto_update:
   enabled: false
@@ -109,9 +109,9 @@ auto_update:
     - "main"
     - "master"
     - "nightly"
-  include: []  
+  include: []
   exclude:
-    - "postgres"  
+    - "postgres"
     - "mongo"
     - "redis"
 """
@@ -152,7 +152,7 @@ async def scheduled_run():
 
 @app.on_event("startup")
 async def startup():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)    
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_F.exists():
         try:
             result = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"], capture_output=True, text=True, check=True)
