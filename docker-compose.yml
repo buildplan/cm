@@ -12,9 +12,44 @@ services:
       - ./data:/app/data # Persistence
       - /opt/docker:/opt/docker # CRITICAL: Map your compose directories exactly as they exist on the host
     environment:
+      # --- System Settings ---
       - DATA_DIR=/app/data
       - HOST_DISK_CHECK_FILESYSTEM=/hostfs
       - CONTAINER_MODE=true
       - MONITOR_INTERVAL_HOURS=6
       - TZ=Europe/London
       - SECRET_TOKEN=changeme123 # Web UI password
+
+      # ========================================================
+      # --- Optional Configuration Seeds ---
+      # (These populate the config.yml UI on the very first boot)
+      # ========================================================
+
+      # General & Thresholds
+      - MONITOR_INTERVAL_HOURS=6
+      - UPDATE_CHECK_CACHE_HOURS=6
+      - CPU_WARNING_THRESHOLD=80
+      - MEMORY_WARNING_THRESHOLD=80
+      - DISK_SPACE_THRESHOLD=80
+
+      # Healthchecks.io
+      - HEALTHCHECKS_JOB_URL=
+      - HEALTHCHECKS_FAIL_ON=Status,Restarts,Resources,Disk,Network,Updates,Logs
+
+      # Notifications (channel = none, discord, ntfy, or generic)
+      - NOTIFICATION_CHANNEL=none
+      - NOTIFY_ON=Updates,Logs,Status,Restarts,Resources
+      - DISCORD_WEBHOOK_URL=
+      - NTFY_SERVER_URL=https://ntfy.sh
+      - NTFY_TOPIC=my_secure_topic_123
+      - NTFY_ACCESS_TOKEN=
+      - NTFY_PRIORITY=3
+
+      # Container Filters (Comma-separated lists)
+      - EXCLUDE_UPDATES=my-local-app-1,my-backend-api
+      - LOG_ERROR_PATTERNS=Exception,SEVERE,Traceback,panic,fatal
+
+      # Auto-Update Engine
+      - AUTO_UPDATE_ENABLED=false
+      - AUTO_UPDATE_TAGS=latest,stable,main
+      - AUTO_UPDATE_EXCLUDE=postgres,redis,mongo

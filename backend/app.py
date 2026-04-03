@@ -23,20 +23,17 @@ SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
 DEFAULT_CONFIG_TEMPLATE = """# Docker Container Monitor Configuration
 
 general:
-  log_lines_to_check: 40
+  log_lines_to_check: __LOG_LINES__
   log_file: "container-monitor.log"
-  update_check_cache_hours: 6 # check for new updates after 6 hours
-  lock_timeout_seconds: 30 # configurable lock timeout
-  healthchecks_job_url: "" # e.g., "https://hc.mydomain.com/ping/YOUR-KEY-HERE"
-  healthchecks_fail_on: "" # Comma-separated list of issues to fail on:
-                           # Status,Restarts,Resources,Disk,Network,Updates,Logs
+  update_check_cache_hours: __CACHE_HOURS__
+  lock_timeout_seconds: __LOCK_TIMEOUT__
+  healthchecks_job_url: "__HC_URL__"
+  healthchecks_fail_on: "__HC_FAIL_ON__"
 
 logs:
   error_patterns:
-    - "Exception"
-    - "SEVERE"
-    - "Traceback"
-  log_clean_pattern: '^[^ ]+[[:space:]]+'
+__ERROR_PATTERNS__
+  log_clean_pattern: '__LOG_CLEAN__'
 
   ignore_patterns:
     my-pgdb:
@@ -44,77 +41,70 @@ logs:
       - "incomplete startup packet"
 
 auth:
-  docker_username: ""
-  docker_password: ""
+  docker_username: "__DOCKER_USER__"
+  docker_password: "__DOCKER_PASS__"
   docker_config_path: "~/.docker/config.json"
 
 thresholds:
-  cpu_warning: 80
-  memory_warning: 80
-  disk_space: 80
-  network_error: 10
+  cpu_warning: __CPU_WARN__
+  memory_warning: __MEM_WARN__
+  disk_space: __DISK_WARN__
+  network_error: __NET_WARN__
 
 host_system:
   disk_check_filesystem: "/"
 
 notifications:
-  channel: "none"
-  notify_on: "Updates,Logs"
+  channel: "__NOTIFY_CHANNEL__"
+  notify_on: "__NOTIFY_ON__"
 
   discord:
-    webhook_url: "https://discord.com/api/webhooks/xxxxxxxx"
+    webhook_url: "__DISCORD_URL__"
 
   generic:
-    webhook_url: ""
+    webhook_url: "__GENERIC_URL__"
 
   ntfy:
-    server_url: "https://ntfy.sh"
-    topic: "your_ntfy_topic_here"
-    access_token: ""
-    priority: 3
-    icon_url: "https://raw.githubusercontent.com/buildplan/container-monitor/refs/heads/main/logo.png"
-    click_url: ""
+    server_url: "__NTFY_URL__"
+    topic: "__NTFY_TOPIC__"
+    access_token: "__NTFY_TOKEN__"
+    priority: __NTFY_PRIORITY__
+    icon_url: "__NTFY_ICON__"
+    click_url: "__NTFY_CLICK__"
 
 containers:
-  # Add the names of containers to monitor by default
   monitor_defaults:
 __DYNAMIC_MONITOR_DEFAULTS__
 
-  # URLs for release notes, used for update checks
   release_urls:
     amir20/dozzle: "https://github.com/amir20/dozzle/releases"
     ghcr.io/moghtech/komodo-periphery: "https://github.com/moghtech/komodo/releases"
     henrygd/beszel: "https://github.com/henrygd/beszel/releases"
-    codeberg.org/forgejo/forgejo: "https://forgejo.org/releases"
-    postgres: "https://www.postgresql.org/docs/release/"
-    portainer/portainer-ce: "https://github.com/portainer/portainer/releases"
-    lscr.io/linuxserver/radarr: "https://github.com/lscr.io/linuxserver.io/pkgs/container/radarr"
 
   update_strategies:
     postgres: "digest"
     redis: "digest"
-    themythologist/monkeytype: "digest"
+    some-specific-app: "major-lock"
     grafana/grafana: "semver"
 
   exclude:
     updates:
-      - my-local-app-1
-      - my-backend-api
+__EXCLUDE_UPDATES__
 
 auto_update:
-  enabled: false
+  enabled: __AUTO_UPDATE_ENABLED__
   tags:
-    - "latest"
-    - "stable"
-    - "main"
-    - "master"
-    - "nightly"
+__AUTO_UPDATE_TAGS__
   include: []
   exclude:
-    - "postgres"
-    - "mongo"
-    - "redis"
+__AUTO_UPDATE_EXCLUDE__
 """
+
+def build_yaml_list(env_val, default_list, indent=4):
+    items = [x.strip() for x in env_val.split(",")] if env_val else default_list
+    if not items or items == [""]:
+        return " " * indent + "# - \"none\""
+    return "\n".join([f"{' ' * indent}- \"{item}\"" for item in items])
 
 # --- Auth Middleware ---
 @app.middleware("http")
@@ -160,13 +150,50 @@ async def startup():
         except Exception as e:
             print(f"Failed to auto-discover containers: {e}")
             discovered_containers = []
-        if discovered_containers:
-            yaml_list = "\n".join([f"    - \"{name}\"" for name in discovered_containers])
-        else:
-            yaml_list = "    # No running containers detected.\n    # - \"example-container\""
+
+        yaml_list = "\n".join([f"    - \"{name}\"" for name in discovered_containers]) if discovered_containers else "    # - \"example-container\""
+
+        # Load template
         final_config = DEFAULT_CONFIG_TEMPLATE.replace("__DYNAMIC_MONITOR_DEFAULTS__", yaml_list)
+
+        # --- Map Standard Environment Variables ---
+        final_config = final_config.replace("__LOG_LINES__", os.environ.get("LOG_LINES_TO_CHECK", "40"))
+        final_config = final_config.replace("__CACHE_HOURS__", os.environ.get("UPDATE_CHECK_CACHE_HOURS", "6"))
+        final_config = final_config.replace("__LOCK_TIMEOUT__", os.environ.get("LOCK_TIMEOUT_SECONDS", "30"))
+        final_config = final_config.replace("__HC_URL__", os.environ.get("HEALTHCHECKS_JOB_URL", ""))
+        final_config = final_config.replace("__HC_FAIL_ON__", os.environ.get("HEALTHCHECKS_FAIL_ON", ""))
+        final_config = final_config.replace("__LOG_CLEAN__", os.environ.get("LOG_CLEAN_PATTERN", "^[^ ]+[[:space:]]+"))
+        final_config = final_config.replace("__DOCKER_USER__", os.environ.get("DOCKER_USERNAME", ""))
+        final_config = final_config.replace("__DOCKER_PASS__", os.environ.get("DOCKER_PASSWORD", ""))
+
+        final_config = final_config.replace("__CPU_WARN__", os.environ.get("CPU_WARNING_THRESHOLD", "80"))
+        final_config = final_config.replace("__MEM_WARN__", os.environ.get("MEMORY_WARNING_THRESHOLD", "80"))
+        final_config = final_config.replace("__DISK_WARN__", os.environ.get("DISK_SPACE_THRESHOLD", "80"))
+        final_config = final_config.replace("__NET_WARN__", os.environ.get("NETWORK_ERROR_THRESHOLD", "10"))
+
+        final_config = final_config.replace("__NOTIFY_CHANNEL__", os.environ.get("NOTIFICATION_CHANNEL", "none"))
+        final_config = final_config.replace("__NOTIFY_ON__", os.environ.get("NOTIFY_ON", "Updates,Logs"))
+        final_config = final_config.replace("__DISCORD_URL__", os.environ.get("DISCORD_WEBHOOK_URL", ""))
+        final_config = final_config.replace("__GENERIC_URL__", os.environ.get("GENERIC_WEBHOOK_URL", ""))
+
+        final_config = final_config.replace("__NTFY_URL__", os.environ.get("NTFY_SERVER_URL", "https://ntfy.sh"))
+        final_config = final_config.replace("__NTFY_TOPIC__", os.environ.get("NTFY_TOPIC", "your_ntfy_topic_here"))
+        final_config = final_config.replace("__NTFY_TOKEN__", os.environ.get("NTFY_ACCESS_TOKEN", ""))
+        final_config = final_config.replace("__NTFY_PRIORITY__", os.environ.get("NTFY_PRIORITY", "3"))
+        final_config = final_config.replace("__NTFY_ICON__", os.environ.get("NTFY_ICON_URL", "https://raw.githubusercontent.com/buildplan/container-monitor/refs/heads/main/logo.png"))
+        final_config = final_config.replace("__NTFY_CLICK__", os.environ.get("NTFY_CLICK_URL", ""))
+
+        final_config = final_config.replace("__AUTO_UPDATE_ENABLED__", os.environ.get("AUTO_UPDATE_ENABLED", "false").lower())
+
+        # --- Map Comma-Separated List Variables ---
+        final_config = final_config.replace("__ERROR_PATTERNS__", build_yaml_list(os.environ.get("LOG_ERROR_PATTERNS", ""), ["Exception", "SEVERE", "Traceback"], 4))
+        final_config = final_config.replace("__EXCLUDE_UPDATES__", build_yaml_list(os.environ.get("EXCLUDE_UPDATES", ""), ["my-local-app-1", "my-backend-api"], 6))
+        final_config = final_config.replace("__AUTO_UPDATE_TAGS__", build_yaml_list(os.environ.get("AUTO_UPDATE_TAGS", ""), ["latest", "stable", "main", "master", "nightly"], 4))
+        final_config = final_config.replace("__AUTO_UPDATE_EXCLUDE__", build_yaml_list(os.environ.get("AUTO_UPDATE_EXCLUDE", ""), ["postgres", "mongo", "redis"], 4))
+
         final_config = final_config.replace("\r\n", "\n")
         CONFIG_F.write_text(final_config)
+
     interval_hours = int(os.environ.get("MONITOR_INTERVAL_HOURS", 6))
     scheduler.add_job(scheduled_run, IntervalTrigger(hours=interval_hours), id="monitor")
     scheduler.start()
