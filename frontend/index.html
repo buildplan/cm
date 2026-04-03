@@ -1,107 +1,167 @@
 <!DOCTYPE html>
-<html lang="en" class="bg-gray-900 text-gray-100">
+<html lang="en" class="bg-gray-900 text-gray-200 antialiased">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Container Monitor</title>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4B5563; }
+    </style>
 </head>
-<body class="min-h-screen flex flex-col items-center p-6">
-    <div id="auth-screen" class="w-full max-w-md mt-20 bg-gray-800 p-8 rounded-xl shadow-xl border border-gray-700 hidden">
-        <h2 class="text-2xl font-bold mb-4 text-cyan-400">🔒 Authenticate</h2>
-        <input type="password" id="token-input" placeholder="Enter Secret Token" class="w-full p-3 bg-gray-900 border border-gray-600 rounded mb-4 text-white">
-        <button onclick="login()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded transition">Login</button>
+<body class="min-h-screen flex flex-col items-center p-6 bg-[#0B1120]">
+    <div id="auth-screen" class="w-full max-w-md mt-20 bg-gray-800/50 p-8 rounded-2xl shadow-2xl border border-gray-700/50 hidden backdrop-blur-sm">
+        <div class="flex items-center gap-3 mb-6 justify-center">
+            <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+            <h2 class="text-2xl font-bold text-white tracking-wide">Container Monitor</h2>
+        </div>
+        <input type="password" id="token-input" placeholder="Enter Secret Token" class="w-full p-3 bg-gray-900/80 border border-gray-600 rounded-xl mb-4 text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none transition">
+        <button onclick="login()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-cyan-900/20">Login to Dashboard</button>
     </div>
 
-    <div id="app-screen" class="w-full max-w-6xl hidden">
-        <header class="flex justify-between items-center mb-8 pb-4 border-b border-gray-700">
+    <div id="app-screen" class="w-full max-w-7xl hidden">
+
+        <header class="flex justify-between items-center mb-8 pb-4 border-b border-gray-800">
             <div class="flex items-center gap-6">
-                <h1 class="text-3xl font-bold text-cyan-400">☸️ Container Monitor</h1>
-                <nav class="hidden md:flex space-x-6 border-l border-gray-700 pl-6">
-                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="text-cyan-400 font-bold transition">Dashboard</button>
-                    <button onclick="switchTab('settings')" id="tab-settings" class="text-gray-400 hover:text-cyan-400 transition">Settings</button>
-                    <button onclick="switchTab('applogs')" id="tab-applogs" class="text-gray-400 hover:text-cyan-400 transition">App Logs</button>
+                <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                    <h1 class="text-2xl font-bold text-white tracking-wide">Container Monitor</h1>
+                </div>
+                <nav class="hidden md:flex space-x-2 border-l border-gray-700 pl-6">
+                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-4 py-2 rounded-lg bg-gray-800 text-cyan-400 font-medium transition">Dashboard</button>
+                    <button onclick="switchTab('settings')" id="tab-settings" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/50 font-medium transition">Settings</button>
+                    <button onclick="switchTab('applogs')" id="tab-applogs" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/50 font-medium transition">App Logs</button>
                 </nav>
             </div>
-            <div class="space-x-4 flex items-center">
-                <button id="update-all-btn" onclick="updateAll()" class="hidden bg-yellow-600 hover:bg-yellow-500 px-4 py-2 rounded font-medium transition shadow-[0_0_10px_rgba(202,138,4,0.4)] text-white">🔄 Update All Eligible</button>
-                <button id="run-check-btn" onclick="triggerRun()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded font-medium transition flex items-center gap-2">⚙️ Run Check Now</button>
-                <button onclick="logout()" class="text-gray-400 hover:text-red-400 transition ml-4">Logout</button>
+            <div class="space-x-3 flex items-center">
+                <button id="update-all-btn" onclick="updateAll()" class="hidden bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 border border-yellow-600/50 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Update All (<span id="update-count">0</span>)
+                </button>
+                <button id="run-check-btn" onclick="triggerRun()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Run Check
+                </button>
+                <button onclick="logout()" class="text-gray-500 hover:text-red-400 transition ml-2 p-2 rounded-lg hover:bg-gray-800/50" title="Logout">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                </button>
             </div>
         </header>
 
         <div id="host-stats-bar" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-gray-800/80 border border-gray-700 p-6 rounded-xl flex items-center justify-between shadow-lg">
+            <div class="bg-gray-800/40 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm">
                 <div>
-                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Host CPU Load (1m)</p>
-                    <p id="stat-cpu" class="text-4xl font-bold text-cyan-400">--</p>
+                    <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">CPU Load (1m)</p>
+                    <p id="stat-cpu" class="text-4xl font-light text-white">--</p>
                 </div>
-                <div class="text-5xl opacity-50 grayscale">⚙️</div>
+                <div class="p-3 bg-cyan-500/10 rounded-xl text-cyan-400">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                </div>
             </div>
-            <div class="bg-gray-800/80 border border-gray-700 p-6 rounded-xl flex items-center justify-between shadow-lg">
+            <div class="bg-gray-800/40 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm">
                 <div>
-                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Host Memory</p>
+                    <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Memory</p>
                     <div class="flex items-baseline gap-3">
-                        <p id="stat-mem" class="text-4xl font-bold text-cyan-400">--</p>
+                        <p id="stat-mem" class="text-4xl font-light text-white">--</p>
                         <p id="stat-mem-detail" class="text-sm text-gray-500 font-medium">-- / --</p>
                     </div>
                 </div>
-                <div class="text-5xl opacity-80">🧠</div>
+                <div class="p-3 bg-purple-500/10 rounded-xl text-purple-400">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                </div>
             </div>
-            <div class="bg-gray-800/80 border border-gray-700 p-6 rounded-xl flex items-center justify-between shadow-lg">
+            <div class="bg-gray-800/40 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm">
                 <div>
-                    <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-1">Host Disk (<span id="stat-disk-fs" class="uppercase">/</span>)</p>
+                    <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Disk (<span id="stat-disk-fs" class="uppercase">/</span>)</p>
                     <div class="flex items-baseline gap-3">
-                        <p id="stat-disk" class="text-4xl font-bold text-cyan-400">--</p>
+                        <p id="stat-disk" class="text-4xl font-light text-white">--</p>
                         <p id="stat-disk-detail" class="text-sm text-gray-500 font-medium">-- / --</p>
                     </div>
                 </div>
-                <div class="text-5xl opacity-80">💾</div>
+                <div class="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                </div>
             </div>
         </div>
 
-        <div id="dashboard-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        <div id="dashboard-view" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"></div>
 
-        <div id="settings-view" class="w-full hidden bg-gray-800 rounded-xl border border-gray-700 p-6">
-            <h2 class="text-2xl font-bold mb-2 text-white">⚙️ Configuration (config.yml)</h2>
-            <p class="text-sm text-gray-400 mb-4">Edit your thresholds, notifications, and monitor list directly. Comments are preserved.</p>
-            <textarea id="config-editor" class="w-full h-[600px] bg-gray-900 text-green-400 p-4 rounded border border-gray-700 font-mono text-sm focus:outline-none focus:border-cyan-500 selection:bg-green-900" spellcheck="false"></textarea>
-            <div class="mt-4 flex justify-between items-center">
-                <span id="config-save-status" class="text-sm text-gray-400"></span>
-                <button onclick="saveConfig()" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-6 rounded transition">💾 Save Configuration</button>
+        <div id="settings-view" class="w-full hidden bg-gray-800/50 rounded-2xl border border-gray-700/50 p-8 backdrop-blur-sm">
+            <div class="flex items-center gap-3 mb-2">
+                <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <h2 class="text-2xl font-bold text-white">Configuration</h2>
             </div>
-            <div class="mt-8 pt-6 border-t border-gray-700">
-                <h3 class="text-lg font-bold text-red-400 mb-2">🧹 System Cleanup</h3>
-                <p class="text-sm text-gray-400 mb-4">Run <code>docker system prune -a</code> to remove all stopped containers, unused networks, and dangling images. This is useful to free up disk space after updating containers.</p>
-                <button id="prune-btn" onclick="systemPrune()" class="bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-700 font-bold py-2 px-6 rounded transition">
+            <p class="text-sm text-gray-400 mb-6">Edit your parameters directly in <code>config.yml</code>. Valid YAML required.</p>
+            <textarea id="config-editor" class="w-full h-[600px] bg-[#0d1117] text-emerald-400 p-6 rounded-xl border border-gray-700 font-mono text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition selection:bg-emerald-900/50" spellcheck="false"></textarea>
+            <div class="mt-6 flex justify-between items-center">
+                <span id="config-save-status" class="text-sm font-medium"></span>
+                <button onclick="saveConfig()" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 px-8 rounded-lg transition shadow-lg shadow-cyan-900/20">💾 Save Configuration</button>
+            </div>
+
+            <div class="mt-10 pt-8 border-t border-gray-800">
+                <div class="flex items-center gap-3 mb-2">
+                    <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    <h3 class="text-lg font-bold text-white">System Cleanup</h3>
+                </div>
+                <p class="text-sm text-gray-400 mb-5">Run <code>docker system prune -a</code> to remove stopped containers, unused networks, and dangling images.</p>
+                <button onclick="systemPrune()" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-medium py-2 px-6 rounded-lg transition flex items-center gap-2">
                     Run System Prune
                 </button>
             </div>
         </div>
 
-        <div id="applogs-view" class="w-full hidden bg-gray-800 rounded-xl border border-gray-700 p-6 flex flex-col h-[700px]">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-white">📜 Background Monitor Logs</h2>
-                <button onclick="loadAppLogs()" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm transition">🔄 Refresh Logs</button>
+        <div id="applogs-view" class="w-full hidden bg-gray-800/50 rounded-2xl border border-gray-700/50 p-8 backdrop-blur-sm flex flex-col h-[800px]">
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center gap-3">
+                    <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <h2 class="text-2xl font-bold text-white">Background Script Logs</h2>
+                </div>
+                <button onclick="loadAppLogs()" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Refresh Logs
+                </button>
             </div>
-            <div id="app-logs-content" class="w-full flex-1 bg-black text-green-400 p-4 rounded border border-gray-700 font-mono text-sm overflow-y-auto whitespace-pre-wrap selection:bg-green-900">
+            <div id="app-logs-content" class="w-full flex-1 bg-[#0d1117] text-gray-300 p-6 rounded-xl border border-gray-700 font-mono text-sm overflow-y-auto whitespace-pre-wrap selection:bg-gray-700">
                 Loading logs...
             </div>
         </div>
 
     </div>
 
-    <div id="log-modal" class="fixed inset-0 bg-black/80 hidden flex-col items-center justify-center p-4 z-50">
-        <div class="bg-gray-800 rounded-xl w-full max-w-4xl border border-gray-700 shadow-2xl flex flex-col h-[80vh]">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-900 rounded-t-xl">
-                <h3 class="font-bold text-lg text-cyan-400" id="log-modal-title">Container Logs</h3>
-                <button onclick="closeLogModal()" class="text-gray-400 hover:text-white text-xl font-bold transition">✕</button>
+    <div id="log-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex-col items-center justify-center p-4 z-40 transition-opacity">
+        <div class="bg-gray-900 rounded-2xl w-full max-w-5xl border border-gray-700 shadow-2xl flex flex-col h-[85vh] overflow-hidden">
+            <div class="p-5 border-b border-gray-800 flex justify-between items-center bg-gray-800/50">
+                <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <h3 class="font-bold text-lg text-white" id="log-modal-title">Container Logs</h3>
+                </div>
+                <button onclick="closeLogModal()" class="text-gray-500 hover:text-white p-1 rounded-lg hover:bg-gray-700 transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
             </div>
-            <div class="p-4 overflow-auto flex-1 bg-black font-mono text-sm text-green-400 whitespace-pre-wrap selection:bg-green-900" id="log-modal-content">
+            <div class="p-6 overflow-auto flex-1 bg-[#0d1117] font-mono text-sm text-gray-300 whitespace-pre-wrap selection:bg-gray-700" id="log-modal-content">
                 Loading...
             </div>
         </div>
     </div>
+
+    <div id="confirm-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex-col items-center justify-center p-4 z-50 opacity-0 transition-opacity duration-200">
+        <div class="bg-gray-800 rounded-2xl w-full max-w-md border border-gray-700 shadow-2xl overflow-hidden transform scale-95 transition-transform duration-200" id="confirm-modal-box">
+            <div class="p-6">
+                <h3 class="font-bold text-xl text-white mb-2" id="confirm-title">Confirm Action</h3>
+                <p class="text-gray-400 text-sm" id="confirm-message">Are you sure?</p>
+            </div>
+            <div class="p-4 bg-gray-800/50 border-t border-gray-700 flex justify-end gap-3">
+                <button id="confirm-no" class="px-5 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition">Cancel</button>
+                <button id="confirm-yes" class="px-5 py-2 rounded-lg text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-500 transition shadow-lg shadow-cyan-900/20">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3 pointer-events-none"></div>
 
     <script src="app.js"></script>
 </body>
