@@ -3,6 +3,24 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 set -uo pipefail
 
+if [ -t 1 ]; then
+    COLOR_RESET=$'\033[0m'
+    COLOR_RED=$'\033[0;31m'
+    COLOR_GREEN=$'\033[0;32m'
+    COLOR_YELLOW=$'\033[0;33m'
+    COLOR_CYAN=$'\033[0;36m'
+    COLOR_MAGENTA=$'\033[0;35m'
+    COLOR_BLUE=$'\033[0;34m'
+else
+    COLOR_RESET=''
+    COLOR_RED=''
+    COLOR_GREEN=''
+    COLOR_YELLOW=''
+    COLOR_CYAN=''
+    COLOR_MAGENTA=''
+    COLOR_BLUE=''
+fi
+
 # --- Global Flags ---
 SUMMARY_ONLY_MODE=false
 PRINT_MESSAGE_FORCE_STDOUT=false
