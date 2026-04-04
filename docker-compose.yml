@@ -8,9 +8,12 @@ services:
       - "9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock # Docker API
+      # Prevent Docker Hub limits and for private registries, log in on the host system with `docker login`
+      - ~/.docker/config.json:/root/.docker/config.json:ro
       - /:/hostfs:ro # Host disk stats
       - ./data:/app/data # Persistence
-      - /opt/docker:/opt/docker # CRITICAL: Map your compose directories exactly as they exist on the host
+      # CRITICAL: Map your compose directories exactly as they exist on the host
+      - /opt/docker:/opt/docker
     environment:
       # --- System Settings ---
       - DATA_DIR=/app/data
