@@ -73,6 +73,8 @@ services:
       - /:/hostfs:ro
       - ./data:/app/data
       - /opt/docker:/opt/docker # Map to your local compose directories
+      # Prevent Docker Hub limits and for private registries, log in on the host system with `docker login`
+      - ~/.docker/config.json:/root/.docker/config.json:ro
     environment:
       # System Configuration
       - DOCKER_HOST=tcp://dockerproxy:2375

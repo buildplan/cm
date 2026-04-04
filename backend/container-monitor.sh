@@ -1652,8 +1652,7 @@ ${fail_details}"
             if [ -f "$cache_update_file" ]; then
                 local cache_data; cache_data=$(cat "$cache_update_file")
                 local key; key=$(jq -r '.key' <<< "$cache_data")
-                local data; data=$(jq -r '.data' <<< "$cache_data")
-                new_state_json=$(jq --arg key "$key" --argjson data "$data" '.updates[$key] = $data' <<< "$new_state_json")
+                new_state_json=$(jq --arg key "$key" --argjson data "$cache_data" '.updates[$key] = $data' <<< "$new_state_json")
             fi
         done
         mapfile -t all_system_containers < <(docker ps -a --format '{{.Names}}')
