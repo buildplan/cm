@@ -124,7 +124,7 @@ async function refreshDashboard() {
         pendingUpdates = [];
         const containers = dockerList.map(c => {
             const name = c.Names.replace(/^\//, "");
-            const issues = issueMap[name] ? issueMap[name].split(",").map(s => s.trim()) : [];
+            const issues = issueMap[name] ? issueMap[name].split("|").map(s => s.trim()) : [];
             const isRunning = c.Status.startsWith("Up");
             let borderColor = "border-gray-700/50";
             let statusPill = isRunning ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Running</span>`
@@ -142,8 +142,14 @@ async function refreshDashboard() {
                 }
             }
 
-            const cacheKey = (c.Image || "").replace(/\//g, "_");
-            const updateObj = Object.values(updateCache).find(e => e?.image_ref?.replace(/\//g, "_") === cacheKey);
+            const cImage = c.Image || "";
+            const updateObj = Object.values(updateCache).find(e => {
+                if (!e || !e.image_ref) return false;
+                const refBase = e.image_ref.split(':')[0]; // Remove tag
+                const cImageBase = cImage.split(':')[0];
+                return e.image_ref.includes(cImageBase) || cImage.includes(refBase);
+            });
+
             const hasUpdate = updateObj && updateObj.data && updateObj.data.exit_code === 100;
             if (hasUpdate) pendingUpdates.push(name);
 
