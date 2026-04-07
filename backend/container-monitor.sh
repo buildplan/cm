@@ -846,13 +846,19 @@ check_for_updates() {
             else
                 local tag_filter
                 local sort_cmd=("sort" "-V")
+                local prefix_part=""
                 local suffix_part=""
-                if [[ "$current_tag" =~ ^(v?[0-9]+(\.[0-9]+)*)(.*)$ ]]; then
-                    suffix_part="${BASH_REMATCH[3]}"
+                if [[ "$current_tag" =~ ^([^0-9]*)([0-9]+(\.[0-9]+)*)(.*)$ ]]; then
+                    prefix_part="${BASH_REMATCH[1]}"
+                    suffix_part="${BASH_REMATCH[4]}"
                 fi
-                if [ -n "$suffix_part" ]; then
-                    local escaped_suffix; escaped_suffix="${suffix_part//./\\.}"
-                    tag_filter="^[v]?[0-9\.]+$escaped_suffix$"
+                if [[ -n "$prefix_part" && "$prefix_part" != "v" ]] || [ -n "$suffix_part" ]; then
+                    local escaped_prefix="${prefix_part//./\\.}"
+                    local escaped_suffix="${suffix_part//./\\.}"
+                    if [ -z "$escaped_prefix" ] || [ "$escaped_prefix" == "v" ]; then
+                        escaped_prefix="[v]?"
+                    fi
+                    tag_filter="^${escaped_prefix}[0-9\.]+${escaped_suffix}$"
                     latest_stable_version=$(echo "$skopeo_output" | jq -r '.Tags[]' | grep -E "$tag_filter" | "${sort_cmd[@]}" | tail -n 1)
                 else
                     if [[ "$strategy" == "major-lock" ]]; then
