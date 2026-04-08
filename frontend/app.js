@@ -25,6 +25,25 @@ function logout() {
     location.reload();
 }
 
+async function fetchAppVersion() {
+    try {
+        const res = await fetch("https://api.github.com/repos/buildplan/cm/releases/latest");
+        const versionEl = document.getElementById("app-version");
+        if (res.ok) {
+            const data = await res.json();
+            if (versionEl && data.tag_name) {
+                versionEl.innerText = data.tag_name;
+            }
+        } else {
+            if (versionEl) versionEl.innerText = "v0.0.7";
+        }
+    } catch (e) {
+        console.error("Failed to fetch version from GitHub:", e);
+        const versionEl = document.getElementById("app-version");
+        if (versionEl) versionEl.innerText = "v0.0.7";
+    }
+}
+
 async function apiFetch(path, opts = {}) {
     const token = localStorage.getItem(TOKEN_KEY) ?? "";
     const res = await fetch(path, {
@@ -100,6 +119,7 @@ async function showApp() {
     appScreen.classList.remove("hidden");
     appScreen.classList.add("flex");
     refreshDashboard();
+    fetchAppVersion();
     setInterval(refreshDashboard, 30000);
 }
 
