@@ -111,10 +111,6 @@ secure_config_file() {
                 print_message "WARNING: Could not change config file permissions. Insufficient privileges or ownership issue. Continuing anyway..." WARNING
             fi
         fi
-    else
-        if [[ -n "$(declare -f print_message)" ]]; then
-            print_message "Config file permissions are secure ($required_perms)." GOOD
-        fi
     fi
     return 0
 }
