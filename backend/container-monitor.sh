@@ -1250,7 +1250,6 @@ run_auto_update_mode() {
 }
 
 # --- Main Execution ---
-# --- Main Execution ---
 main() {
     # --- Argument Parsing ---
     local ORIGINAL_ARGS=("$@")
