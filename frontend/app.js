@@ -96,7 +96,9 @@ function customConfirm(title, message) {
 // --- Core App Logic ---
 
 async function showApp() {
-    document.getElementById("app-screen").classList.remove("hidden");
+    const appScreen = document.getElementById("app-screen");
+    appScreen.classList.remove("hidden");
+    appScreen.classList.add("flex");
     refreshDashboard();
     setInterval(refreshDashboard, 30000);
 }
