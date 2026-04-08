@@ -1,4 +1,5 @@
 import asyncio, json, subprocess, os, secrets
+from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -20,11 +21,22 @@ CONFIG_F  = DATA_DIR / "config.yml"
 LOG_F     = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
 
+# --- Unified Logging Function ---
+def log_event(msg: str, level="INFO"):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_line = f"{timestamp} [{level}] {msg}\n"
+    try:
+        with open(LOG_F, "a") as f:
+            f.write(log_line)
+    except Exception:
+        pass
+    print(log_line.strip())
+
 DEFAULT_CONFIG_TEMPLATE = """# Docker Container Monitor Configuration
 
 general:
   log_lines_to_check: __LOG_LINES__
-  log_file: "container-monitor.log"
+  log_file: "/app/data/container-monitor.log"
   update_check_cache_hours: __CACHE_HOURS__
   lock_timeout_seconds: __LOCK_TIMEOUT__
   healthchecks_job_url: "__HC_URL__"
@@ -134,10 +146,11 @@ async def run_script(*args) -> tuple[int, str]:
         out, _ = await proc.communicate()
         return proc.returncode, out.decode("utf-8", errors="replace")
     except Exception as e:
-        error_msg = f"❌ Backend Execution Error: {str(e)}\n\n(If you see 'No such file or directory' or 'Exec format error', your container-monitor.sh script likely has Windows CRLF line endings. You need to convert it to LF formatting!)"
+        error_msg = f"❌ Backend Execution Error: {str(e)}"
         return 1, error_msg
 
 async def scheduled_run():
+    log_event("Triggering scheduled background check...", "API")
     await run_script("--summary")
 
 @app.on_event("startup")
@@ -156,7 +169,7 @@ async def startup():
         # Load template
         final_config = DEFAULT_CONFIG_TEMPLATE.replace("__DYNAMIC_MONITOR_DEFAULTS__", yaml_list)
 
-        # --- Map Standard Environment Variables ---
+        # ... (Environment Mapping) ...
         final_config = final_config.replace("__LOG_LINES__", os.environ.get("LOG_LINES_TO_CHECK", "40"))
         final_config = final_config.replace("__CACHE_HOURS__", os.environ.get("UPDATE_CHECK_CACHE_HOURS", "6"))
         final_config = final_config.replace("__LOCK_TIMEOUT__", os.environ.get("LOCK_TIMEOUT_SECONDS", "30"))
@@ -194,6 +207,7 @@ async def startup():
         final_config = final_config.replace("\r\n", "\n")
         CONFIG_F.write_text(final_config)
 
+    log_event("Container Monitor API started successfully.", "API")
     interval_hours = int(os.environ.get("MONITOR_INTERVAL_HOURS", 6))
     scheduler.add_job(scheduled_run, IntervalTrigger(hours=interval_hours), id="monitor")
     scheduler.start()
@@ -211,18 +225,21 @@ async def get_containers():
 
 @app.post("/api/run")
 async def trigger_run(force: bool = False):
+    log_event(f"Manual monitor check triggered (Force cache bypass: {force})", "API")
     args = ["--summary", "--force"] if force else ["--summary"]
     code, out = await run_script(*args)
     return {"exit_code": code, "output": out}
 
 @app.post("/api/update/{container_name:path}")
 async def update_container(container_name: str):
+    log_event(f"Pull & Recreate requested for container: {container_name}", "API")
     inspect = subprocess.run(
         ["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', container_name],
         capture_output=True, text=True
     )
     working_dir = inspect.stdout.strip()
     if not working_dir or not Path(working_dir).is_dir():
+        log_event(f"Update failed: {container_name} lacks a valid working_dir", "ERROR")
         raise HTTPException(400, f"'{container_name}' lacks a compose working_dir label, or '{working_dir}' isn't mounted.")
 
     output_lines = []
@@ -234,11 +251,15 @@ async def update_container(container_name: str):
         out, _ = await proc.communicate()
         output_lines.append(out.decode("utf-8", errors="replace"))
         if proc.returncode != 0:
+            log_event(f"Update failed for {container_name} during '{' '.join(compose_args)}'", "ERROR")
             return {"exit_code": proc.returncode, "output": "\n".join(output_lines), "error": f"Failed: {' '.join(compose_args)}"}
+
+    log_event(f"Successfully updated {container_name}", "GOOD")
     return {"exit_code": 0, "output": "\n".join(output_lines)}
 
 @app.post("/api/prune")
 async def prune_system():
+    log_event("System cleanup (prune -a) triggered via Web UI", "API")
     proc = await asyncio.create_subprocess_exec(
         "docker", "system", "prune", "-af",
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
@@ -250,6 +271,8 @@ async def prune_system():
 async def control_container(action: str, container_name: str):
     if action not in ["start", "stop", "restart"]:
         raise HTTPException(400, "Invalid action")
+
+    log_event(f"Command '{action}' sent to container: {container_name}", "API")
     proc = await asyncio.create_subprocess_exec(
         "docker", action, container_name,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
@@ -271,9 +294,11 @@ async def get_config():
 
 @app.put("/api/config")
 async def update_config(data: ConfigUpdate):
+    log_event("User updated configuration via Web UI", "API")
     try:
         yaml.safe_load(data.yaml_text)
     except yaml.YAMLError as e:
+        log_event(f"Failed to save configuration: Invalid YAML", "ERROR")
         raise HTTPException(400, f"Invalid YAML format: {e}")
     CONFIG_F.write_text(data.yaml_text)
     return {"status": "saved"}

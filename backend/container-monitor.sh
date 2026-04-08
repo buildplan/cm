@@ -58,8 +58,8 @@ declare -a _SCRIPT_DEFAULT_CONTAINER_NAMES_ARRAY=()
 LOG_LINES_TO_CHECK="${LOG_LINES_TO_CHECK:-$_SCRIPT_DEFAULT_LOG_LINES_TO_CHECK}"
 CHECK_FREQUENCY_MINUTES="${CHECK_FREQUENCY_MINUTES:-$_SCRIPT_DEFAULT_CHECK_FREQUENCY_MINUTES}"
 # Pre-load of Log File
-if [ -z "${LOG_FILE:-}" ] && [ -f "$SCRIPT_DIR/config.yml" ]; then
-    PRELOAD_LOG=$(grep -E "^[[:space:]]*log_file:" "$SCRIPT_DIR/config.yml" | head -n 1 | sed -E 's/.*log_file:[[:space:]]*["'\'']?([^"'\'']+)["'\'']?.*/\1/')
+if [ -z "${LOG_FILE:-}" ] && [ -f "$DATA_DIR/config.yml" ]; then
+    PRELOAD_LOG=$(grep -E "^[[:space:]]*log_file:" "$DATA_DIR/config.yml" | head -n 1 | sed -E 's/.*log_file:[[:space:]]*["'\'']?([^"'\'']+)["'\'']?.*/\1/')
     if [ -n "$PRELOAD_LOG" ]; then
         if [[ "$PRELOAD_LOG" != /* ]]; then LOG_FILE="$SCRIPT_DIR/$PRELOAD_LOG"; else LOG_FILE="$PRELOAD_LOG"; fi
     fi
@@ -82,7 +82,7 @@ declare -a CONTAINER_NAMES_FROM_CONFIG_FILE=()
 
 # --- Functions ---
 secure_config_file() {
-    local config_file="${1:-${SCRIPT_DIR}/config.yml}"
+    local config_file="${1:-${DATA_DIR}/config.yml}"
     local required_perms="600"
     local current_perms
     if [[ ! -f "$config_file" ]]; then
@@ -110,10 +110,6 @@ secure_config_file() {
             if [[ -n "$(declare -f print_message)" ]]; then
                 print_message "WARNING: Could not change config file permissions. Insufficient privileges or ownership issue. Continuing anyway..." WARNING
             fi
-        fi
-    else
-        if [[ -n "$(declare -f print_message)" ]]; then
-            print_message "Config file permissions are secure ($required_perms)." GOOD
         fi
     fi
     return 0
@@ -314,64 +310,42 @@ print_header_box() {
 }
 
 run_setup_check() {
-    print_message "--- Running Setup & Dependency Check ---" "INFO"
+    print_message "--- Running Container Environment Diagnostic ---" "INFO"
     local all_ok=true
 
-    # 1. Check for system packages (docker, jq, etc.)
-    local missing_pkgs=()
-    declare -A deps=( [docker]=docker [jq]=jq [skopeo]=skopeo [awk]=gawk [timeout]=coreutils [curl]=curl )
-    for cmd in "${!deps[@]}"; do
-        if ! command -v "$cmd" &>/dev/null; then
-            missing_pkgs+=("${deps[$cmd]}")
-        fi
-    done
-
-    if [ ${#missing_pkgs[@]} -gt 0 ]; then
-        print_message "✖ System dependencies missing: ${missing_pkgs[*]}" "DANGER"
+    # 1. Check Docker Socket Connectivity
+    if ! docker info >/dev/null 2>&1; then
+        print_message "✖ Docker daemon unreachable. Check your /var/run/docker.sock volume mount!" "DANGER"
         all_ok=false
     else
-        print_message "✔ System dependencies are installed." "GOOD"
+        print_message "✔ Connected to Docker daemon successfully." "GOOD"
     fi
 
-    # 2. Check yq status (installed and up-to-date)
-    if ! command -v yq &>/dev/null; then
-        print_message "✖ yq is not installed. It's a required dependency." "DANGER"
+    # 2. Check Data Directory Permissions
+    if [ ! -w "$DATA_DIR" ]; then
+        print_message "✖ Data directory ($DATA_DIR) is not writable. Check host folder permissions." "DANGER"
         all_ok=false
     else
-        local local_yq_version; local_yq_version=$(yq --version | awk '{print $NF}')
-        local latest_yq_tag; latest_yq_tag=$(curl -sL -o /dev/null -w "%{url_effective}" "https://github.com/mikefarah/yq/releases/latest" | xargs basename 2>/dev/null)
-        if [[ -n "$latest_yq_tag" && "$local_yq_version" != "$latest_yq_tag" ]]; then
-            print_message "❕ yq has an update available: ${latest_yq_tag} (you have ${local_yq_version})." "WARNING"
-            print_message "  Run the script manually to get an update prompt." "INFO"
-        else
-            print_message "✔ yq is up-to-date (version ${local_yq_version})." "GOOD"
-        fi
+        print_message "✔ Data directory is writable." "GOOD"
     fi
 
-    # 3. Check for script update
-    local latest_version; latest_version=$(curl -sL "$SCRIPT_URL" | grep -m 1 "VERSION=" | cut -d'"' -f2)
-    if [[ -n "$latest_version" && "$VERSION" != "$latest_version" ]]; then
-        print_message "❕ This script has an update available: ${latest_version} (you have ${VERSION})." "WARNING"
-        print_message "  Run the script manually to get an update prompt." "INFO"
-    else
-        print_message "✔ Script is up-to-date (version ${VERSION})." "GOOD"
-    fi
-
-    # 4. Check config.yml
+    # 3. Check config.yml
     _CONFIG_FILE_PATH="$DATA_DIR/config.yml"
     if [ ! -f "$_CONFIG_FILE_PATH" ]; then
-        print_message "❕ config.yml not found. The script will use default values." "WARNING"
+        print_message "❕ config.yml not found. (It will be generated automatically)." "WARNING"
     elif ! yq e '.' "$_CONFIG_FILE_PATH" >/dev/null 2>&1; then
-        print_message "✖ config.yml has invalid syntax." "DANGER"
+        print_message "✖ config.yml exists but has invalid YAML syntax." "DANGER"
         all_ok=false
     else
         print_message "✔ config.yml found and has valid syntax." "GOOD"
     fi
+
     echo
     if [ "$all_ok" = true ]; then
-        print_message "Setup check passed. The script is ready to run." "GOOD"
+        print_message "Diagnostic check passed. The container environment is healthy." "GOOD"
+        return 0
     else
-        print_message "Setup check failed. Please address the errors (✖) above." "DANGER"
+        print_message "Diagnostic check failed. Please address the errors (✖) above." "DANGER"
         return 1
     fi
 }
@@ -727,9 +701,9 @@ get_update_strategy() {
     local image_name="$1"
     local service_name="${image_name##*/}"
     local strategy=""
-    strategy=$(yq e ".containers.update_strategies.\"$image_name\" // \"\"" "$SCRIPT_DIR/config.yml" 2>/dev/null)
+    strategy=$(yq e ".containers.update_strategies.\"$image_name\" // \"\"" "$DATA_DIR/config.yml" 2>/dev/null)
     if [ -z "$strategy" ] && [ "$image_name" != "$service_name" ]; then
-        strategy=$(yq e ".containers.update_strategies.\"$service_name\" // \"\"" "$SCRIPT_DIR/config.yml" 2>/dev/null)
+        strategy=$(yq e ".containers.update_strategies.\"$service_name\" // \"\"" "$DATA_DIR/config.yml" 2>/dev/null)
     fi
     if [ -n "$strategy" ]; then
         echo "$strategy"
@@ -820,7 +794,7 @@ check_for_updates() {
                 error_message="Could not get local digest for '$current_image_ref'. Cannot check tag '$current_tag'."
                 update_check_failed=true
             else
-                local remote_inspect_output; remote_inspect_output=$(skopeo "${skopeo_opts[@]}" inspect --no-tags "${skopeo_repo_ref}:${current_tag}" 2>&1)
+                local remote_inspect_output; remote_inspect_output=$(timeout 45 skopeo "${skopeo_opts[@]}" inspect --no-tags "${skopeo_repo_ref}:${current_tag}" 2>&1)
                 if [ $? -ne 0 ]; then
                     error_message="Error inspecting remote image '${skopeo_repo_ref}:${current_tag}'. Details: $remote_inspect_output"
                     update_check_failed=true
@@ -839,7 +813,7 @@ check_for_updates() {
             fi
             ;;
         *)
-            local skopeo_output; skopeo_output=$(skopeo "${skopeo_opts[@]}" list-tags "$skopeo_repo_ref" 2>&1)
+            local skopeo_output; skopeo_output=$(timeout 45 skopeo "${skopeo_opts[@]}" list-tags "$skopeo_repo_ref" 2>&1)
             if [ $? -ne 0 ]; then
                 error_message="Error listing tags for '${skopeo_repo_ref}'. Details: $skopeo_output"
                 update_check_failed=true
@@ -949,9 +923,9 @@ check_logs() {
     local current_errors; current_errors=$(echo "$logs_to_process" | grep -i -E "$error_regex")
 
 	# Filter out ignored patterns for this specific container
-    if [ -n "$current_errors" ] && [ -f "$SCRIPT_DIR/config.yml" ]; then
+    if [ -n "$current_errors" ] && [ -f "$DATA_DIR/config.yml" ]; then
         local ignore_patterns=()
-        mapfile -t ignore_patterns < <(yq e ".logs.ignore_patterns.\"$container_name\"[]" "$SCRIPT_DIR/config.yml" 2>/dev/null)
+        mapfile -t ignore_patterns < <(yq e ".logs.ignore_patterns.\"$container_name\"[]" "$DATA_DIR/config.yml" 2>/dev/null)
         if [ ${#ignore_patterns[@]} -gt 0 ]; then
             local ignore_regex; ignore_regex=$(printf "%s|" "${ignore_patterns[@]}")
             ignore_regex="${ignore_regex%|}"
