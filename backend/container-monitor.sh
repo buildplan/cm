@@ -58,8 +58,8 @@ declare -a _SCRIPT_DEFAULT_CONTAINER_NAMES_ARRAY=()
 LOG_LINES_TO_CHECK="${LOG_LINES_TO_CHECK:-$_SCRIPT_DEFAULT_LOG_LINES_TO_CHECK}"
 CHECK_FREQUENCY_MINUTES="${CHECK_FREQUENCY_MINUTES:-$_SCRIPT_DEFAULT_CHECK_FREQUENCY_MINUTES}"
 # Pre-load of Log File
-if [ -z "${LOG_FILE:-}" ] && [ -f "$SCRIPT_DIR/config.yml" ]; then
-    PRELOAD_LOG=$(grep -E "^[[:space:]]*log_file:" "$SCRIPT_DIR/config.yml" | head -n 1 | sed -E 's/.*log_file:[[:space:]]*["'\'']?([^"'\'']+)["'\'']?.*/\1/')
+if [ -z "${LOG_FILE:-}" ] && [ -f "$DATA_DIR/config.yml" ]; then
+    PRELOAD_LOG=$(grep -E "^[[:space:]]*log_file:" "$DATA_DIR/config.yml" | head -n 1 | sed -E 's/.*log_file:[[:space:]]*["'\'']?([^"'\'']+)["'\'']?.*/\1/')
     if [ -n "$PRELOAD_LOG" ]; then
         if [[ "$PRELOAD_LOG" != /* ]]; then LOG_FILE="$SCRIPT_DIR/$PRELOAD_LOG"; else LOG_FILE="$PRELOAD_LOG"; fi
     fi
@@ -82,7 +82,7 @@ declare -a CONTAINER_NAMES_FROM_CONFIG_FILE=()
 
 # --- Functions ---
 secure_config_file() {
-    local config_file="${1:-${SCRIPT_DIR}/config.yml}"
+    local config_file="${1:-${DATA_DIR}/config.yml}"
     local required_perms="600"
     local current_perms
     if [[ ! -f "$config_file" ]]; then
@@ -701,9 +701,9 @@ get_update_strategy() {
     local image_name="$1"
     local service_name="${image_name##*/}"
     local strategy=""
-    strategy=$(yq e ".containers.update_strategies.\"$image_name\" // \"\"" "$SCRIPT_DIR/config.yml" 2>/dev/null)
+    strategy=$(yq e ".containers.update_strategies.\"$image_name\" // \"\"" "$DATA_DIR/config.yml" 2>/dev/null)
     if [ -z "$strategy" ] && [ "$image_name" != "$service_name" ]; then
-        strategy=$(yq e ".containers.update_strategies.\"$service_name\" // \"\"" "$SCRIPT_DIR/config.yml" 2>/dev/null)
+        strategy=$(yq e ".containers.update_strategies.\"$service_name\" // \"\"" "$DATA_DIR/config.yml" 2>/dev/null)
     fi
     if [ -n "$strategy" ]; then
         echo "$strategy"
@@ -923,9 +923,9 @@ check_logs() {
     local current_errors; current_errors=$(echo "$logs_to_process" | grep -i -E "$error_regex")
 
 	# Filter out ignored patterns for this specific container
-    if [ -n "$current_errors" ] && [ -f "$SCRIPT_DIR/config.yml" ]; then
+    if [ -n "$current_errors" ] && [ -f "$DATA_DIR/config.yml" ]; then
         local ignore_patterns=()
-        mapfile -t ignore_patterns < <(yq e ".logs.ignore_patterns.\"$container_name\"[]" "$SCRIPT_DIR/config.yml" 2>/dev/null)
+        mapfile -t ignore_patterns < <(yq e ".logs.ignore_patterns.\"$container_name\"[]" "$DATA_DIR/config.yml" 2>/dev/null)
         if [ ${#ignore_patterns[@]} -gt 0 ]; then
             local ignore_regex; ignore_regex=$(printf "%s|" "${ignore_patterns[@]}")
             ignore_regex="${ignore_regex%|}"
