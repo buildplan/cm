@@ -27,20 +27,22 @@ function logout() {
 
 async function fetchAppVersion() {
     try {
-        const res = await fetch("https://api.github.com/repos/buildplan/cm/releases/latest");
+        const res = await fetch("https://api.github.com/repos/buildplan/cm/tags");
         const versionEl = document.getElementById("app-version");
         if (res.ok) {
             const data = await res.json();
-            if (versionEl && data.tag_name) {
-                versionEl.innerText = data.tag_name;
+            if (versionEl && data.length > 0 && data[0].name) {
+                versionEl.innerText = data[0].name;
+            } else {
+                if (versionEl) versionEl.innerText = "v0.0.x";
             }
         } else {
-            if (versionEl) versionEl.innerText = "v0.0.7";
+            if (versionEl) versionEl.innerText = "v0.0.x";
         }
     } catch (e) {
         console.error("Failed to fetch version from GitHub:", e);
         const versionEl = document.getElementById("app-version");
-        if (versionEl) versionEl.innerText = "v0.0.7";
+        if (versionEl) versionEl.innerText = "v0.0.x";
     }
 }
 
