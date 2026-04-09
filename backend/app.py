@@ -304,8 +304,11 @@ async def update_config(data: ConfigUpdate):
     return {"status": "saved"}
 
 @app.get("/api/container-logs/{container_name:path}")
-async def get_container_logs(container_name: str):
-    code, out = await run_script("--logs", container_name)
+async def get_container_logs(container_name: str, filter: str = ""):
+    args = ["--logs", container_name]
+    if filter:
+        args.append(filter)
+    code, out = await run_script(*args)
     return {"output": out}
 
 @app.get("/api/host-stats")
