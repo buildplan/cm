@@ -1,5 +1,6 @@
 const TOKEN_KEY = "cm_token";
 const STATUS_PRIORITY = { "Status": "red", "Restarts": "red", "Resources": "yellow", "Disk": "yellow", "Network": "yellow", "Logs": "yellow", "Updates": "yellow" };
+const APP_VERSION = "v0.0.10"; // Change this before building new docker images
 
 let pendingUpdates = [];
 
@@ -25,24 +26,38 @@ function logout() {
     location.reload();
 }
 
+function isNewerVersion(localVer, upstreamVer) {
+    const l = localVer.replace('v', '').split('.').map(Number);
+    const u = upstreamVer.replace('v', '').split('.').map(Number);
+    for (let i = 0; i < Math.max(l.length, u.length); i++) {
+        if ((u[i] || 0) > (l[i] || 0)) return true;
+        if ((u[i] || 0) < (l[i] || 0)) return false;
+    }
+    return false;
+}
+
 async function fetchAppVersion() {
+    const versionEl = document.getElementById("app-version");
+    if (!versionEl) return;
+    versionEl.innerHTML = APP_VERSION;
     try {
         const res = await fetch("https://api.github.com/repos/buildplan/cm/tags");
-        const versionEl = document.getElementById("app-version");
         if (res.ok) {
             const data = await res.json();
-            if (versionEl && data.length > 0 && data[0].name) {
-                versionEl.innerText = data[0].name;
-            } else {
-                if (versionEl) versionEl.innerText = "v0.0.x";
+            if (data.length > 0 && data[0].name) {
+                const upstreamVersion = data[0].name;
+                if (isNewerVersion(APP_VERSION, upstreamVersion)) {
+                    versionEl.innerHTML = `
+                        ${APP_VERSION}
+                        <a href="https://github.com/buildplan/cm/pkgs/container/cm" target="_blank" rel="noopener noreferrer" class="ml-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 transition cursor-pointer" title="View latest image on GitHub">
+                            Update Available: ${upstreamVersion}
+                        </a>
+                    `;
+                }
             }
-        } else {
-            if (versionEl) versionEl.innerText = "v0.0.x";
         }
     } catch (e) {
-        console.error("Failed to fetch version from GitHub:", e);
-        const versionEl = document.getElementById("app-version");
-        if (versionEl) versionEl.innerText = "v0.0.x";
+        console.error("Failed to check for upstream updates:", e);
     }
 }
 
