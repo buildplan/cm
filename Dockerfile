@@ -12,7 +12,7 @@ RUN pip3 uninstall -y pip setuptools \
 FROM alpine:3.23
 
 RUN apk upgrade --no-cache && apk add --no-cache \
-    bash jq yq skopeo curl docker-cli docker-cli-compose tzdata python3
+    dumb-init bash jq yq skopeo curl docker-cli docker-cli-compose tzdata python3
 
 COPY --from=builder /opt/venv /opt/venv
 
@@ -26,4 +26,4 @@ COPY frontend/ ./frontend/
 RUN chmod +x /app/backend/container-monitor.sh && mkdir -p /app/data
 
 EXPOSE 9000
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "9000", "--workers", "1"]
+CMD ["dumb-init", "uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "9000", "--workers", "1"]
