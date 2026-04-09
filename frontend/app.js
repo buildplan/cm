@@ -1,6 +1,6 @@
 const TOKEN_KEY = "cm_token";
 const STATUS_PRIORITY = { "Status": "red", "Restarts": "red", "Resources": "yellow", "Disk": "yellow", "Network": "yellow", "Logs": "yellow", "Updates": "yellow" };
-const APP_VERSION = "v0.0.10"; // Change this before building new docker images
+const APP_VERSION = "v0.0.12"; // Change this before building new docker images
 
 let pendingUpdates = [];
 
@@ -348,24 +348,62 @@ async function updateAll() {
     refreshDashboard();
 }
 
+let currentLogContainer = null;
+let logFollowInterval = null;
+let isFollowingLogs = false;
+
 async function viewLogs(name) {
+    currentLogContainer = name;
     const modal = document.getElementById("log-modal");
     modal.classList.remove("hidden");
     modal.classList.add("flex");
     requestAnimationFrame(() => modal.classList.remove("opacity-0"));
     document.getElementById("log-modal-title").innerText = `Logs: ${name}`;
-    document.getElementById("log-modal-content").innerText = "Fetching logs...";
+    document.getElementById("log-filter-input").value = "";
 
+    await refreshCurrentLogs();
+}
+
+async function refreshCurrentLogs() {
+    if (!currentLogContainer) return;
+    const contentBox = document.getElementById("log-modal-content");
+    const filterStr = document.getElementById("log-filter-input").value.trim();
+    if (!isFollowingLogs) {
+        contentBox.innerText = "Fetching logs...";
+    }
     try {
-        const res = await apiFetch(`/api/container-logs/${name}`);
+        let url = `/api/container-logs/${currentLogContainer}`;
+        if (filterStr) url += `?filter=${encodeURIComponent(filterStr)}`;
+        const res = await apiFetch(url);
         const data = await res.json();
-        document.getElementById("log-modal-content").textContent = data.output || "No logs available or command failed.";
+        contentBox.textContent = data.output || "No logs available or command failed.";
+        contentBox.scrollTop = contentBox.scrollHeight;
     } catch (e) {
-        document.getElementById("log-modal-content").innerText = "Error fetching logs from server.";
+        if (!isFollowingLogs) {
+            contentBox.innerText = "Error fetching logs from server.";
+        }
+    }
+}
+
+function toggleFollowLogs() {
+    const btn = document.getElementById("follow-logs-btn");
+    isFollowingLogs = !isFollowingLogs;
+    if (isFollowingLogs) {
+        btn.classList.add("text-emerald-400", "bg-gray-700", "border-emerald-500/50");
+        btn.classList.remove("text-gray-400");
+        logFollowInterval = setInterval(refreshCurrentLogs, 2000);
+        refreshCurrentLogs();
+    } else {
+        btn.classList.remove("text-emerald-400", "bg-gray-700", "border-emerald-500/50");
+        btn.classList.add("text-gray-400");
+        clearInterval(logFollowInterval);
+        logFollowInterval = null;
     }
 }
 
 function closeLogModal() {
+    if (isFollowingLogs) toggleFollowLogs();
+    currentLogContainer = null;
     const modal = document.getElementById("log-modal");
     modal.classList.add("opacity-0");
     setTimeout(() => {
