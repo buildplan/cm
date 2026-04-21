@@ -25,33 +25,33 @@
 
     <div id="app-screen" class="w-full max-w-7xl hidden flex-1 flex-col">
 
-        <header class="flex justify-between items-center mb-8 pb-4 border-b border-gray-800">
-            <div class="flex items-center gap-6">
-                <div class="flex items-center gap-3">
-                    <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
-                    <h1 class="text-2xl font-bold text-white tracking-wide">Container Monitor</h1>
+        <header class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 pb-4 border-b border-gray-800 gap-5 xl:gap-0">
+            <div class="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 w-full xl:w-auto">
+                <div class="flex items-center gap-3 shrink-0">
+                    <svg class="w-8 h-8 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                    <h1 class="text-xl sm:text-2xl font-bold text-white tracking-wide truncate">Container Monitor</h1>
                 </div>
-                <nav class="hidden md:flex space-x-2 border-l border-gray-700 pl-6">
-                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-4 py-2 rounded-lg bg-gray-800 text-cyan-400 font-medium transition">Dashboard</button>
-                    <button onclick="switchTab('settings')" id="tab-settings" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/50 font-medium transition">Settings</button>
-                    <button onclick="switchTab('applogs')" id="tab-applogs" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/50 font-medium transition">App Logs</button>
+                <nav class="flex overflow-x-auto w-full md:w-auto space-x-2 md:border-l md:border-gray-700 md:pl-6 pb-2 md:pb-0">
+                    <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-4 py-2 rounded-lg bg-gray-800 text-cyan-400 font-medium transition whitespace-nowrap shrink-0">Dashboard</button>
+                    <button onclick="switchTab('settings')" id="tab-settings" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/50 font-medium transition whitespace-nowrap shrink-0">Settings</button>
+                    <button onclick="switchTab('applogs')" id="tab-applogs" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800/50 font-medium transition whitespace-nowrap shrink-0">App Logs</button>
                 </nav>
             </div>
-            <div class="space-x-3 flex items-center">
-                <button id="update-all-btn" onclick="updateAll()" class="hidden bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 border border-yellow-600/50 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    Update All (<span id="update-count">0</span>)
+            <div class="flex flex-wrap items-center gap-2 xl:space-x-3 w-full xl:w-auto justify-start xl:justify-end">
+                <button id="update-all-btn" onclick="updateAll()" class="hidden bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 border border-yellow-600/50 px-3 md:px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 flex-1 md:flex-none justify-center">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span class="whitespace-nowrap">Update All (<span id="update-count">0</span>)</span>
                 </button>
-               <button id="force-check-btn" onclick="triggerRun(true)" class="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-4 py-2 rounded-lg font-medium transition flex items-center gap-2" title="Bypass cache and force Skopeo to check remote registries">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    Force Check
+                <button id="force-check-btn" onclick="triggerRun(true)" class="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 md:px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 flex-1 md:flex-none justify-center" title="Bypass cache and force Skopeo to check remote registries">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span class="whitespace-nowrap">Force Check</span>
                 </button>
-                <button id="run-check-btn" onclick="triggerRun(false)" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white px-4 py-2 rounded-lg font-medium transition flex items-center gap-2" title="Run standard check (uses 6-hour cache)">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    Run Check
+                <button id="run-check-btn" onclick="triggerRun(false)" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white px-3 md:px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 flex-1 md:flex-none justify-center" title="Run standard check (uses 6-hour cache)">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <span class="whitespace-nowrap">Run Check</span>
                 </button>
-                <button onclick="logout()" class="text-gray-500 hover:text-red-400 transition ml-2 p-2 rounded-lg hover:bg-gray-800/50" title="Logout">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                <button onclick="logout()" class="text-gray-500 hover:text-red-400 transition p-2 rounded-lg hover:bg-gray-800/50 shrink-0 border border-transparent hover:border-gray-700 ml-auto xl:ml-2" title="Logout">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                 </button>
             </div>
         </header>
