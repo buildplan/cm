@@ -1,6 +1,6 @@
 const TOKEN_KEY = "cm_token";
 const STATUS_PRIORITY = { "Status": "red", "Restarts": "red", "Resources": "yellow", "Disk": "yellow", "Network": "yellow", "Logs": "yellow", "Updates": "yellow" };
-const APP_VERSION = "v0.0.12"; // Change this before building new docker images
+const APP_VERSION = "v0.0.15"; // Change this before building new docker images
 
 let pendingUpdates = [];
 
