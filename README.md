@@ -54,6 +54,7 @@ services:
       # Required for compose recreation
       - NETWORKS=1   # Needed for compose to attach containers to networks
       - VOLUMES=1    # Needed for compose to attach existing volumes
+      - BUILD=1      # Allows clearing the docker build cache
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     read_only: true
