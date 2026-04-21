@@ -265,7 +265,12 @@ async def prune_system():
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
     )
     out, _ = await proc.communicate()
-    return {"exit_code": proc.returncode, "output": out.decode("utf-8", errors="replace")}
+    output_str = out.decode("utf-8", errors="replace")
+    if proc.returncode != 0:
+        log_event(f"Prune failed! Docker daemon returned: {output_str.strip()}", "ERROR")
+    else:
+        log_event("System prune completed successfully.", "GOOD")
+    return {"exit_code": proc.returncode, "output": output_str}
 
 @app.post("/api/containers/{action}/{container_name:path}")
 async def control_container(action: str, container_name: str):
