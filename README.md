@@ -86,7 +86,7 @@ services:
       - SECRET_TOKEN=your_secure_password_here
 
       # Optional Configuration Seeds (Populates config.yml on first boot)
-      - MONITOR_INTERVAL_HOURS=6
+      - MONITOR_INTERVAL_MINUTES=360
       - UPDATE_CHECK_CACHE_HOURS=6
       - CPU_WARNING_THRESHOLD=80
       - MEMORY_WARNING_THRESHOLD=80
