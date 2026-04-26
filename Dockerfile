@@ -1,5 +1,5 @@
 # 1: Builder Stage
-FROM alpine:3.23 AS builder
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS builder
 
 RUN apk add --no-cache python3 py3-pip
 RUN python3 -m venv /opt/venv
@@ -9,7 +9,7 @@ RUN pip3 uninstall -y pip setuptools \
     && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # 2: Final Image
-FROM alpine:3.23
+FROM alpine:3.23@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11
 
 RUN apk upgrade --no-cache && apk add --no-cache \
     dumb-init bash jq yq skopeo curl docker-cli docker-cli-compose tzdata python3
