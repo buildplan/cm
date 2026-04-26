@@ -35,6 +35,7 @@ def log_event(msg: str, level="INFO"):
 DEFAULT_CONFIG_TEMPLATE = """# Docker Container Monitor Configuration
 
 general:
+  monitor_interval_minutes: __INTERVAL_MINS__
   log_lines_to_check: __LOG_LINES__
   log_file: "/app/data/container-monitor.log"
   update_check_cache_hours: __CACHE_HOURS__
@@ -170,6 +171,7 @@ async def startup():
         final_config = DEFAULT_CONFIG_TEMPLATE.replace("__DYNAMIC_MONITOR_DEFAULTS__", yaml_list)
 
         # ... (Environment Mapping) ...
+        final_config = final_config.replace("__INTERVAL_MINS__", os.environ.get("MONITOR_INTERVAL_MINUTES", "360"))
         final_config = final_config.replace("__LOG_LINES__", os.environ.get("LOG_LINES_TO_CHECK", "40"))
         final_config = final_config.replace("__CACHE_HOURS__", os.environ.get("UPDATE_CHECK_CACHE_HOURS", "6"))
         final_config = final_config.replace("__LOCK_TIMEOUT__", os.environ.get("LOCK_TIMEOUT_SECONDS", "30"))
@@ -208,8 +210,16 @@ async def startup():
         CONFIG_F.write_text(final_config)
 
     log_event("Container Monitor API started successfully.", "API")
-    interval_hours = int(os.environ.get("MONITOR_INTERVAL_HOURS", 6))
-    scheduler.add_job(scheduled_run, IntervalTrigger(hours=interval_hours), id="monitor")
+
+    # Read interval from existing config.yml
+    try:
+        with open(CONFIG_F, "r") as f:
+            cfg = yaml.safe_load(f)
+        interval_mins = int(cfg.get("general", {}).get("monitor_interval_minutes", 360))
+    except Exception:
+        interval_mins = 360
+
+    scheduler.add_job(scheduled_run, IntervalTrigger(minutes=interval_mins), id="monitor")
     scheduler.start()
 
 # --- API Endpoints ---
@@ -301,11 +311,18 @@ async def get_config():
 async def update_config(data: ConfigUpdate):
     log_event("User updated configuration via Web UI", "API")
     try:
-        yaml.safe_load(data.yaml_text)
+        parsed_yaml = yaml.safe_load(data.yaml_text)
     except yaml.YAMLError as e:
         log_event(f"Failed to save configuration: Invalid YAML", "ERROR")
         raise HTTPException(400, f"Invalid YAML format: {e}")
     CONFIG_F.write_text(data.yaml_text)
+    try:
+        new_interval = int(parsed_yaml.get("general", {}).get("monitor_interval_minutes", 360))
+        scheduler.reschedule_job("monitor", trigger=IntervalTrigger(minutes=new_interval))
+        log_event(f"Success: Rescheduled background monitor to run every {new_interval} minutes.", "API")
+    except Exception as e:
+        log_event(f"Warning: Failed to reschedule job (ensure monitor_interval_minutes is a number): {e}", "WARNING")
+
     return {"status": "saved"}
 
 @app.get("/api/container-logs/{container_name:path}")
