@@ -1,6 +1,6 @@
 const TOKEN_KEY = "cm_token";
 const STATUS_PRIORITY = { "Status": "red", "Restarts": "red", "Resources": "yellow", "Disk": "yellow", "Network": "yellow", "Logs": "yellow", "Updates": "yellow" };
-const APP_VERSION = "v0.0.15"; // Change this before building new docker images
+const APP_VERSION = "dev";
 
 let pendingUpdates = [];
 
@@ -27,6 +27,7 @@ function logout() {
 }
 
 function isNewerVersion(localVer, upstreamVer) {
+    if (!localVer.match(/v?\d+\.\d+\.\d+/)) return false;
     const l = localVer.replace('v', '').split('.').map(Number);
     const u = upstreamVer.replace('v', '').split('.').map(Number);
     for (let i = 0; i < Math.max(l.length, u.length); i++) {
