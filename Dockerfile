@@ -23,6 +23,9 @@ WORKDIR /app
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
+ARG APP_VERSION=dev
+RUN sed -i "s/const APP_VERSION = .*/const APP_VERSION = \"${APP_VERSION}\";/" /app/frontend/app.js
+
 RUN chmod +x /app/backend/container-monitor.sh && mkdir -p /app/data
 
 EXPOSE 9000
