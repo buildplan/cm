@@ -132,13 +132,34 @@ function customConfirm(title, message) {
 
 // --- Core App Logic ---
 
+let sseSource = null;
+
+function setupSSE() {
+    if (sseSource) sseSource.close();
+    const token = localStorage.getItem(TOKEN_KEY) ?? "";
+    sseSource = new EventSource(`/api/events?token=${token}`);
+    
+    sseSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === "state_changed" || data.type === "docker_event") {
+                refreshDashboard();
+            }
+        } catch (e) {}
+    };
+
+    sseSource.onerror = (e) => {
+        console.error("SSE connection error", e);
+    };
+}
+
 async function showApp() {
     const appScreen = document.getElementById("app-screen");
     appScreen.classList.remove("hidden");
     appScreen.classList.add("flex");
     refreshDashboard();
     fetchAppVersion();
-    setInterval(refreshDashboard, 30000);
+    setupSSE();
 }
 
 async function refreshDashboard() {
@@ -172,13 +193,13 @@ async function refreshDashboard() {
 
             for (const issue of issues) {
                 if (STATUS_PRIORITY[issue.split(":")[0]] === "red") {
-                    borderColor = "border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)]";
-                    statusPill = `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">Error</span>`;
+                    borderColor = "border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)] bg-red-500/5";
+                    statusPill = `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.3)]">Error</span>`;
                     break;
                 }
                 if (STATUS_PRIORITY[issue.split(":")[0]] === "yellow") {
-                    borderColor = "border-yellow-500/50";
-                    if(isRunning) statusPill = `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">Warning</span>`;
+                    borderColor = "border-yellow-500/50 shadow-[0_0_10px_rgba(234,179,8,0.1)] bg-yellow-500/5";
+                    if(isRunning) statusPill = `<span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 animate-pulse">Warning</span>`;
                 }
             }
 
@@ -194,10 +215,10 @@ async function refreshDashboard() {
             if (hasUpdate) pendingUpdates.push(name);
 
             return `
-                <div class="p-5 rounded-2xl border ${borderColor} bg-gray-800/30 backdrop-blur-sm transition hover:bg-gray-800/50 flex flex-col justify-between">
+                <div class="p-5 rounded-2xl border ${borderColor} bg-gray-800/30 backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:bg-gray-800/60 flex flex-col justify-between group">
                     <div>
                         <div class="flex justify-between items-start mb-3">
-                            <h3 class="font-bold text-lg text-white truncate pr-2" title="${name}">${name}</h3>
+                            <h3 class="font-bold text-lg text-white truncate pr-2 group-hover:text-cyan-400 transition-colors" title="${name}">${name}</h3>
                             <div class="flex items-center gap-2">
                                 <div class="flex items-center bg-gray-900/80 rounded-lg border border-gray-700 p-0.5">
                                     <button onclick="controlContainer('start', '${name}')" class="text-gray-500 hover:text-emerald-400 p-1 rounded transition" title="Start"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6V4z"></path></svg></button>
@@ -210,8 +231,8 @@ async function refreshDashboard() {
                         ${issues.length > 0 ? `<p class="text-xs text-gray-400 mt-2 leading-relaxed"><strong>Alerts:</strong> ${issues.join(", ")}</p>` : `<p class="text-xs text-gray-500 mt-2">Operating normally.</p>`}
                     </div>
 
-                    <div class="mt-5 pt-4 border-t border-gray-700/50 flex gap-3">
-                        <button onclick="viewLogs('${name}')" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs font-medium px-3 py-2 rounded-lg transition flex justify-center items-center gap-2">
+                    <div class="mt-5 pt-4 border-t border-gray-700/50 flex gap-3 opacity-80 group-hover:opacity-100 transition-opacity">
+                        <button onclick="viewLogs('${name}')" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-300 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2">
                             <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                             Logs
                         </button>
@@ -221,7 +242,7 @@ async function refreshDashboard() {
                                 Update
                             </button>
                         ` : `
-                            <button onclick="updateContainer('${name}', this)" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-400 border border-gray-700 text-xs font-medium px-3 py-2 rounded-lg transition flex justify-center items-center gap-2" title="Force Pull & Recreate">
+                            <button onclick="updateContainer('${name}', this)" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-400 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Force Pull & Recreate">
                                 <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                                 Pull
                             </button>
@@ -432,32 +453,135 @@ function switchTab(tabName) {
     if (tabName === 'applogs') loadAppLogs();
 }
 
+let configMode = "visual";
+
+function switchConfigTab(tab) {
+    configMode = tab;
+    const isVisual = tab === "visual";
+    document.getElementById("config-visual-view").classList.toggle("hidden", !isVisual);
+    document.getElementById("config-yaml-view").classList.toggle("hidden", isVisual);
+    
+    const vTab = document.getElementById("tab-visual");
+    const yTab = document.getElementById("tab-yaml");
+    
+    if (isVisual) {
+        vTab.className = "px-4 py-1.5 text-sm font-bold rounded-md bg-gray-700 text-white shadow transition-all";
+        yTab.className = "px-4 py-1.5 text-sm font-medium rounded-md text-gray-400 hover:text-white transition-all";
+        loadConfig(); // Refresh visual from server
+    } else {
+        yTab.className = "px-4 py-1.5 text-sm font-bold rounded-md bg-gray-700 text-white shadow transition-all";
+        vTab.className = "px-4 py-1.5 text-sm font-medium rounded-md text-gray-400 hover:text-white transition-all";
+        loadConfigYaml(); // Refresh yaml from server
+    }
+}
+
 async function loadConfig() {
+    if (configMode === "yaml") return loadConfigYaml();
+    
     try {
-        const res = await apiFetch("/api/config");
+        const res = await apiFetch("/api/config/json");
         const data = await res.json();
         if (res.ok) {
-            document.getElementById("config-editor").value = data.yaml_text;
+            // General
+            document.getElementById("f-schedule").value = data.general?.monitor_interval_minutes || 360;
+            document.getElementById("f-cache").value = data.general?.update_check_cache_hours || 6;
+            document.getElementById("f-lock").value = data.general?.lock_timeout_seconds || 30;
+            document.getElementById("f-log-lines").value = data.general?.log_lines_to_check || 40;
+            
+            // Thresholds
+            document.getElementById("f-t-cpu").value = data.thresholds?.cpu_warning || 80;
+            document.getElementById("f-t-mem").value = data.thresholds?.memory_warning || 80;
+            document.getElementById("f-t-disk").value = data.thresholds?.disk_space || 80;
+            document.getElementById("f-t-net").value = data.thresholds?.network_error || 10;
+
+            // Auto Update
+            document.getElementById("f-au-enabled").checked = String(data.auto_update?.enabled).toLowerCase() === "true";
+            document.getElementById("f-au-tags").value = (data.auto_update?.tags || []).join(", ");
+            document.getElementById("f-au-include").value = (data.auto_update?.include || []).join(", ");
+            document.getElementById("f-au-exclude").value = (data.auto_update?.exclude || []).join(", ");
+            
+            // Notifications
+            document.getElementById("f-notify-channel").value = data.notifications?.channel || "none";
+            document.getElementById("f-notify-on").value = data.notifications?.notify_on || "Updates,Logs";
+            document.getElementById("f-discord").value = data.notifications?.discord?.webhook_url || "";
+            document.getElementById("f-generic").value = data.notifications?.generic?.webhook_url || "";
+            document.getElementById("f-hc-url").value = data.general?.healthchecks_job_url || "";
+
         } else {
-            document.getElementById("config-editor").value = "# Error loading config: " + data.detail;
+            showToast("Error loading config JSON", "error");
         }
     } catch (e) {
         showToast("Failed to load config", "error");
     }
 }
 
-async function saveConfig() {
-    const yamlText = document.getElementById("config-editor").value;
-    const statusText = document.getElementById("config-save-status");
+async function loadConfigYaml() {
+    try {
+        const res = await apiFetch("/api/config");
+        const text = await res.text();
+        if (res.ok) {
+            document.getElementById("config-editor").value = text;
+        } else {
+            document.getElementById("config-editor").value = "# Error loading config";
+        }
+    } catch (e) {
+        showToast("Failed to load YAML config", "error");
+    }
+}
 
+async function saveConfig() {
+    const statusText = document.getElementById("config-save-status");
     statusText.innerText = "⏳ Saving...";
     statusText.className = "text-sm font-medium text-yellow-400";
 
     try {
-        const res = await apiFetch("/api/config", {
-            method: "PUT",
-            body: JSON.stringify({ yaml_text: yamlText })
-        });
+        let res;
+        if (configMode === "visual") {
+            const resJson = await apiFetch("/api/config/json");
+            const baseData = await resJson.json();
+            
+            baseData.general = baseData.general || {};
+            baseData.general.monitor_interval_minutes = parseInt(document.getElementById("f-schedule").value) || 360;
+            baseData.general.update_check_cache_hours = parseInt(document.getElementById("f-cache").value) || 6;
+            baseData.general.lock_timeout_seconds = parseInt(document.getElementById("f-lock").value) || 30;
+            baseData.general.log_lines_to_check = parseInt(document.getElementById("f-log-lines").value) || 40;
+            baseData.general.healthchecks_job_url = document.getElementById("f-hc-url").value.trim();
+            
+            baseData.thresholds = baseData.thresholds || {};
+            baseData.thresholds.cpu_warning = parseInt(document.getElementById("f-t-cpu").value) || 80;
+            baseData.thresholds.memory_warning = parseInt(document.getElementById("f-t-mem").value) || 80;
+            baseData.thresholds.disk_space = parseInt(document.getElementById("f-t-disk").value) || 80;
+            baseData.thresholds.network_error = parseInt(document.getElementById("f-t-net").value) || 10;
+            
+            baseData.auto_update = baseData.auto_update || {};
+            baseData.auto_update.enabled = document.getElementById("f-au-enabled").checked;
+            baseData.auto_update.tags = document.getElementById("f-au-tags").value.split(",").map(s => s.trim()).filter(Boolean);
+            baseData.auto_update.include = document.getElementById("f-au-include").value.split(",").map(s => s.trim()).filter(Boolean);
+            baseData.auto_update.exclude = document.getElementById("f-au-exclude").value.split(",").map(s => s.trim()).filter(Boolean);
+            
+            baseData.notifications = baseData.notifications || {};
+            baseData.notifications.channel = document.getElementById("f-notify-channel").value;
+            baseData.notifications.notify_on = document.getElementById("f-notify-on").value.trim() || "Updates,Logs";
+            
+            baseData.notifications.discord = baseData.notifications.discord || {};
+            baseData.notifications.discord.webhook_url = document.getElementById("f-discord").value.trim();
+            
+            baseData.notifications.generic = baseData.notifications.generic || {};
+            baseData.notifications.generic.webhook_url = document.getElementById("f-generic").value.trim();
+
+            res = await apiFetch("/api/config/json", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(baseData)
+            });
+        } else {
+            const yamlText = document.getElementById("config-editor").value;
+            res = await apiFetch("/api/config", {
+                method: "PUT",
+                headers: { "Content-Type": "text/plain" },
+                body: yamlText
+            });
+        }
 
         if (res.ok) {
             statusText.innerText = "";
@@ -465,7 +589,7 @@ async function saveConfig() {
         } else {
             const data = await res.json();
             statusText.innerText = "";
-            showToast("Invalid YAML Format", "error");
+            showToast("Invalid configuration format: " + (data.detail || ""), "error");
         }
     } catch (e) {
         statusText.innerText = "";

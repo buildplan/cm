@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+npm-debug.log
+backend/__pycache__/
+
+# Persistent Data
+data/
+
+# Environment variables
+compose-prod*
+docker-compose-*
+.env*
+.env
+
+# System Files
+.DS_Store
+Thumbs.db
+*.bak
+
+.antigravitycli/
+ANTIGRAVITY.md
+AGENTS.md

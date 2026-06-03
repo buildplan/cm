@@ -1,22 +1,28 @@
 import asyncio, json, subprocess, os, secrets
 from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi.responses import StreamingResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from pydantic import BaseModel
 import yaml
+from contextlib import asynccontextmanager
 
 class ConfigUpdate(BaseModel): yaml_text: str
 
-app = FastAPI(title="Container Monitor API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await startup()
+    yield
+
+app = FastAPI(title="Container Monitor API", lifespan=lifespan)
 scheduler = AsyncIOScheduler()
 
 DATA_DIR  = Path(os.environ.get("DATA_DIR", "/app/data"))
-SCRIPT    = Path("/app/backend/container-monitor.sh")
-STATE_F   = DATA_DIR / ".monitor_state.json"
+
+STATE_DB  = DATA_DIR / "monitor_state.db"
 CONFIG_F  = DATA_DIR / "config.yml"
 LOG_F     = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
@@ -126,36 +132,76 @@ async def token_auth(request: Request, call_next):
         if SECRET_TOKEN:
             auth_header = request.headers.get("Authorization", "")
             token = auth_header.removeprefix("Bearer ").strip()
+            if not token:
+                token = request.query_params.get("token", "")
             if not token or not secrets.compare_digest(token.encode(), SECRET_TOKEN.encode()):
                 return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     return await call_next(request)
 
-def script_env():
-    return {
-        **os.environ,
-        "DATA_DIR": str(DATA_DIR),
-        "CONTAINER_MODE": "true",
-        "HOST_DISK_CHECK_FILESYSTEM": os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs"),
-    }
+from backend.monitor import Monitor, get_container_logs
+from backend.state import StateManager
+from backend.config import AppConfig
 
-async def run_script(*args) -> tuple[int, str]:
-    cmd = [str(SCRIPT), *args]
+sse_clients = set()
+
+def broadcast_event(event_type: str, data: dict):
+    msg = json.dumps({"type": event_type, "data": data})
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=script_env()
-        )
-        out, _ = await proc.communicate()
-        return proc.returncode, out.decode("utf-8", errors="replace")
-    except Exception as e:
-        error_msg = f"❌ Backend Execution Error: {str(e)}"
-        return 1, error_msg
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    for q in list(sse_clients):
+        loop.call_soon_threadsafe(q.put_nowait, msg)
+
+async def event_generator(q: asyncio.Queue):
+    try:
+        while True:
+            msg = await q.get()
+            yield f"data: {msg}\n\n"
+    except asyncio.CancelledError:
+        pass
+    finally:
+        sse_clients.discard(q)
+
+@app.get("/api/events")
+async def sse_events(request: Request):
+    q = asyncio.Queue()
+    sse_clients.add(q)
+    return StreamingResponse(event_generator(q), media_type="text/event-stream")
 
 async def scheduled_run():
     log_event("Triggering scheduled background check...", "API")
-    await run_script("--summary")
+    try:
+        monitor = Monitor(on_update=broadcast_event)
+        await asyncio.to_thread(monitor.run)
+    except Exception as e:
+        log_event(f"Scheduled run failed: {e}", "ERROR")
 
-@app.on_event("startup")
+import docker
+
+async def docker_event_listener():
+    try:
+        client = docker.from_env()
+        # Run event listener in a thread to not block the event loop
+        def listen_events():
+            for event in client.events(decode=True):
+                # We only care about container events
+                if event.get("Type") == "container":
+                    status = event.get("status")
+                    if status in ("start", "stop", "die", "restart", "kill", "pause", "unpause"):
+                        try:
+                            loop = asyncio.get_running_loop()
+                        except RuntimeError:
+                            continue
+                        msg = json.dumps({"type": "docker_event", "action": status, "container": event.get("Actor", {}).get("Attributes", {}).get("name")})
+                        for q in list(sse_clients):
+                            loop.call_soon_threadsafe(q.put_nowait, msg)
+        await asyncio.to_thread(listen_events)
+    except Exception as e:
+        log_event(f"Docker event listener failed: {e}", "ERROR")
+
 async def startup():
+    asyncio.create_task(docker_event_listener())
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_F.exists():
         try:
@@ -225,8 +271,8 @@ async def startup():
 # --- API Endpoints ---
 @app.get("/api/state")
 async def get_state():
-    if not STATE_F.exists(): return {}
-    return json.loads(STATE_F.read_text())
+    mgr = StateManager(STATE_DB)
+    return mgr.get_all()
 
 @app.get("/api/containers")
 async def get_containers():
@@ -236,9 +282,12 @@ async def get_containers():
 @app.post("/api/run")
 async def trigger_run(force: bool = False):
     log_event(f"Manual monitor check triggered (Force cache bypass: {force})", "API")
-    args = ["--summary", "--force"] if force else ["--summary"]
-    code, out = await run_script(*args)
-    return {"exit_code": code, "output": out}
+    try:
+        monitor = Monitor(force=force, on_update=broadcast_event)
+        await asyncio.to_thread(monitor.run)
+        return {"exit_code": 0, "output": "Monitoring completed successfully"}
+    except Exception as e:
+        return {"exit_code": 1, "output": str(e)}
 
 @app.post("/api/update/{container_name:path}")
 async def update_container(container_name: str):
@@ -303,34 +352,58 @@ async def get_monitor_log(lines: int = 200):
     return {"lines": LOG_F.read_text().splitlines()[-lines:]}
 
 @app.get("/api/config")
-async def get_config():
-    if not CONFIG_F.exists(): raise HTTPException(404, "config.yml not found")
-    return {"yaml_text": CONFIG_F.read_text()}
+def get_config():
+    try:
+        with open(CONFIG_F, "r") as f:
+            return PlainTextResponse(f.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/config/json")
+def get_config_json():
+    try:
+        with open(CONFIG_F, "r") as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/config")
-async def update_config(data: ConfigUpdate):
-    log_event("User updated configuration via Web UI", "API")
+async def update_config(request: Request):
     try:
-        parsed_yaml = yaml.safe_load(data.yaml_text)
-    except yaml.YAMLError as e:
-        log_event(f"Failed to save configuration: Invalid YAML", "ERROR")
-        raise HTTPException(400, f"Invalid YAML format: {e}")
-    CONFIG_F.write_text(data.yaml_text)
-    try:
+        body = await request.body()
+        yaml_str = body.decode("utf-8")
+        parsed_yaml = yaml.safe_load(yaml_str)
+        AppConfig(**parsed_yaml)
+
+        with open(CONFIG_F, "w") as f:
+            f.write(yaml_str)
+
         new_interval = int(parsed_yaml.get("general", {}).get("monitor_interval_minutes", 360))
         scheduler.reschedule_job("monitor", trigger=IntervalTrigger(minutes=new_interval))
         log_event(f"Success: Rescheduled background monitor to run every {new_interval} minutes.", "API")
+        return {"status": "saved"}
     except Exception as e:
-        log_event(f"Warning: Failed to reschedule job (ensure monitor_interval_minutes is a number): {e}", "WARNING")
+        raise HTTPException(status_code=400, detail=str(e))
 
-    return {"status": "saved"}
+@app.put("/api/config/json")
+async def update_config_json(request: Request):
+    try:
+        data = await request.json()
+        AppConfig(**data)
+
+        with open(CONFIG_F, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+        new_interval = int(data.get("general", {}).get("monitor_interval_minutes", 360))
+        scheduler.reschedule_job("monitor", trigger=IntervalTrigger(minutes=new_interval))
+        log_event(f"Success: Rescheduled background monitor to run every {new_interval} minutes.", "API")
+        return {"status": "saved"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/container-logs/{container_name:path}")
-async def get_container_logs(container_name: str, filter: str = ""):
-    args = ["--logs", container_name]
-    if filter:
-        args.append(filter)
-    code, out = await run_script(*args)
+async def container_logs(container_name: str, filter: str = ""):
+    out = get_container_logs(container_name, filter)
     return {"output": out}
 
 @app.get("/api/host-stats")
@@ -363,5 +436,9 @@ async def get_host_stats():
             cpu_load = f.read().split()[0]
     except Exception: pass
     return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 app.mount("/", StaticFiles(directory="/app/frontend", html=True), name="frontend")
