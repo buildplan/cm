@@ -8,10 +8,16 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from pydantic import BaseModel
 import yaml
+from contextlib import asynccontextmanager
 
 class ConfigUpdate(BaseModel): yaml_text: str
 
-app = FastAPI(title="Container Monitor API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await startup()
+    yield
+
+app = FastAPI(title="Container Monitor API", lifespan=lifespan)
 scheduler = AsyncIOScheduler()
 
 DATA_DIR  = Path(os.environ.get("DATA_DIR", "/app/data"))
@@ -194,7 +200,6 @@ async def docker_event_listener():
     except Exception as e:
         log_event(f"Docker event listener failed: {e}", "ERROR")
 
-@app.on_event("startup")
 async def startup():
     asyncio.create_task(docker_event_listener())
     DATA_DIR.mkdir(parents=True, exist_ok=True)

@@ -138,6 +138,7 @@ class Monitor:
             log_event(f"Failed to save state: {e}", "ERROR")
 
     def run(self):
+        log_event("Starting monitor cycle...", "INFO")
         if not self.client:
             log_event("Cannot run monitor cycle: Docker client not initialized.", "ERROR")
             return
@@ -149,6 +150,7 @@ class Monitor:
             except: pass
             
         containers = self.client.containers.list(all=True)
+        log_event(f"Found {len(containers)} containers to evaluate.", "INFO")
         monitor_defaults = self.config.get("containers", {}).get("monitor_defaults", [])
         exclude_updates = self.config.get("containers", {}).get("exclude", {}).get("updates", [])
         
@@ -166,6 +168,7 @@ class Monitor:
             if monitor_defaults and name not in monitor_defaults:
                 continue
                 
+            log_event(f"Evaluating container: {name}", "DEBUG")
             issues = []
             
             # Status
@@ -202,8 +205,10 @@ class Monitor:
                 
                 if cpu_percent > cpu_warn:
                     issues.append(f"Resources: CPU high ({cpu_percent:.1f}%)")
+                    log_event(f"[{name}] CPU usage high: {cpu_percent:.1f}%", "WARNING")
                 if mem_percent > mem_warn:
                     issues.append(f"Resources: Mem high ({mem_percent:.1f}%)")
+                    log_event(f"[{name}] Memory usage high: {mem_percent:.1f}%", "WARNING")
             except:
                 pass
                 
@@ -224,6 +229,7 @@ class Monitor:
                                 usage_str = parts[4].replace("%", "")
                                 if usage_str.isdigit() and int(usage_str) > disk_threshold:
                                     issues.append(f"Disk: High usage ({usage_str}%) at {dest}")
+                                    log_event(f"[{name}] Disk usage high ({usage_str}%) at {dest}", "WARNING")
                 except: pass
 
             # Network
@@ -235,6 +241,7 @@ class Monitor:
                         errors = data.get("rx_errors", 0) + data.get("tx_errors", 0) + data.get("rx_dropped", 0) + data.get("tx_dropped", 0)
                         if errors > net_threshold:
                             issues.append(f"Network: {errors} errors/drops on {iface}")
+                            log_event(f"[{name}] Network issues: {errors} errors/drops on {iface}", "WARNING")
                 except: pass
                 
             # Logs
@@ -252,6 +259,7 @@ class Monitor:
                             break
                 if has_error:
                     issues.append("Logs: Errors detected")
+                    log_event(f"[{name}] Log errors detected.", "WARNING")
             except:
                 pass
                 
@@ -277,10 +285,12 @@ class Monitor:
                             strategy = self.config.get("containers", {}).get("update_strategies", {}).get(name, "digest")
                             
                         if strategy in ["semver", "major-lock"]:
+                            log_event(f"[{name}] Checking remote tags for {image_ref} (Strategy: {strategy})", "DEBUG")
                             tags = get_registry_tags(image_ref)
                             latest = get_latest_tag(tags, current_tag, strategy)
                             if latest and latest != current_tag and parse_version(latest) > parse_version(current_tag):
                                 msg = f"Update available: {latest}"
+                                log_event(f"[{name}] UPDATE FOUND: {latest} (Current: {current_tag})", "INFO")
                                 self.state["updates"][cache_key] = {
                                     "key": cache_key, "image_ref": image_ref,
                                     "data": {"message": msg, "exit_code": 100, "timestamp": int(time.time())}
@@ -295,6 +305,7 @@ class Monitor:
                                     "data": {"message": "Up to date", "exit_code": 0, "timestamp": int(time.time())}
                                 }
                         else:
+                            log_event(f"[{name}] Checking remote digest for {image_ref} (Strategy: digest)", "DEBUG")
                             reg_data = self.client.images.get_registry_data(image_ref)
                             local_digest = None
                             repo_digests = c.image.attrs.get("RepoDigests", [])
@@ -304,6 +315,7 @@ class Monitor:
                             remote_digest = reg_data.id
                             if local_digest and remote_digest and local_digest != remote_digest:
                                 msg = "Update available"
+                                log_event(f"[{name}] UPDATE FOUND: New digest available for {image_ref}", "INFO")
                                 self.state["updates"][cache_key] = {
                                     "key": cache_key, "image_ref": image_ref,
                                     "data": {"message": msg, "exit_code": 100, "timestamp": int(time.time())}
@@ -328,6 +340,7 @@ class Monitor:
         
         self.state["container_issues"] = issues_found
         self.save_state()
+        log_event(f"Monitor cycle completed. {len(issues_found)} containers have issues.", "INFO")
         
         if containers_to_auto_update:
             log_event(f"Auto-update triggered for: {', '.join(containers_to_auto_update)}", "INFO")
