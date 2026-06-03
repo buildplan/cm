@@ -13,8 +13,45 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 CONFIG_F = DATA_DIR / "config.yml"
 STATE_DB = DATA_DIR / "monitor_state.db"
 LOG_F = DATA_DIR / "container-monitor.log"
-
 import subprocess
+
+def execute_compose_update(working_dir: str, container_name: str):
+    import os
+    client = docker.from_env()
+    
+    if Path(working_dir).is_dir():
+        # Fast path: directory is mounted locally in this container
+        pull_res = subprocess.run(["docker", "compose", "pull"], cwd=working_dir, capture_output=True, text=True)
+        if pull_res.returncode != 0: raise Exception(f"Pull failed: {pull_res.stderr}")
+        up_res = subprocess.run(["docker", "compose", "up", "-d", "--force-recreate"], cwd=working_dir, capture_output=True, text=True)
+        if up_res.returncode != 0: raise Exception(f"Up failed: {up_res.stderr}")
+        return pull_res.stdout + "\n" + up_res.stdout
+
+    # Auto-mount path: execute via ephemeral sibling container
+    my_id = os.environ.get("HOSTNAME")
+    env = {}
+    if "DOCKER_HOST" in os.environ:
+        env["DOCKER_HOST"] = os.environ["DOCKER_HOST"]
+        
+    try:
+        client.images.get("docker:cli")
+    except docker.errors.ImageNotFound:
+        client.images.pull("docker:cli")
+        
+    log_event(f"[{container_name}] Path {working_dir} not mounted locally. Using ephemeral container to auto-mount from host.", "INFO")
+    
+    logs = client.containers.run(
+        image="docker:cli",
+        entrypoint="sh",
+        command=["-c", "docker compose pull && docker compose up -d --force-recreate"],
+        volumes={working_dir: {'bind': working_dir, 'mode': 'ro'}},
+        working_dir=working_dir,
+        environment=env,
+        network_mode=f"container:{my_id}" if my_id else None,
+        remove=True
+    )
+    return logs.decode("utf-8", errors="replace")
+
 def log_event(msg: str, level="INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
@@ -307,13 +344,13 @@ class Monitor:
                         else:
                             log_event(f"[{name}] Checking remote digest for {image_ref} (Strategy: digest)", "DEBUG")
                             reg_data = self.client.images.get_registry_data(image_ref)
-                            local_digest = None
+                            local_digests = []
                             repo_digests = c.image.attrs.get("RepoDigests", [])
                             if repo_digests:
-                                local_digest = repo_digests[0].split("@")[-1]
+                                local_digests = [rd.split("@")[-1] for rd in repo_digests]
 
                             remote_digest = reg_data.id
-                            if local_digest and remote_digest and local_digest != remote_digest:
+                            if local_digests and remote_digest and remote_digest not in local_digests:
                                 msg = "Update available"
                                 log_event(f"[{name}] UPDATE FOUND: New digest available for {image_ref}", "INFO")
                                 self.state["updates"][cache_key] = {
@@ -348,10 +385,11 @@ class Monitor:
                 try:
                     inspect = subprocess.run(["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', au_name], capture_output=True, text=True)
                     wdir = inspect.stdout.strip()
-                    if wdir and Path(wdir).is_dir():
-                        subprocess.run(["docker", "compose", "pull"], cwd=wdir, capture_output=True)
-                        subprocess.run(["docker", "compose", "up", "-d", "--force-recreate"], cwd=wdir, capture_output=True)
+                    if wdir:
+                        execute_compose_update(wdir, au_name)
                         log_event(f"Successfully auto-updated {au_name}", "GOOD")
+                    else:
+                        log_event(f"Skipping auto-update for {au_name}: no compose working_dir found", "WARNING")
                 except Exception as e:
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 

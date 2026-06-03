@@ -297,24 +297,19 @@ async def update_container(container_name: str):
         capture_output=True, text=True
     )
     working_dir = inspect.stdout.strip()
-    if not working_dir or not Path(working_dir).is_dir():
-        log_event(f"Update failed: {container_name} lacks a valid working_dir", "ERROR")
-        raise HTTPException(400, f"'{container_name}' lacks a compose working_dir label, or '{working_dir}' isn't mounted.")
+    if not working_dir:
+        log_event(f"Update failed: {container_name} lacks a compose working_dir label", "ERROR")
+        raise HTTPException(400, f"'{container_name}' lacks a compose working_dir label.")
 
-    output_lines = []
-    for compose_args in [["pull"], ["up", "-d", "--force-recreate"]]:
-        proc = await asyncio.create_subprocess_exec(
-            "docker", "compose", *compose_args, cwd=working_dir,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )
-        out, _ = await proc.communicate()
-        output_lines.append(out.decode("utf-8", errors="replace"))
-        if proc.returncode != 0:
-            log_event(f"Update failed for {container_name} during '{' '.join(compose_args)}'", "ERROR")
-            return {"exit_code": proc.returncode, "output": "\n".join(output_lines), "error": f"Failed: {' '.join(compose_args)}"}
+    from backend.monitor import execute_compose_update
+    try:
+        output = await asyncio.to_thread(execute_compose_update, working_dir, container_name)
+    except Exception as e:
+        log_event(f"Update failed for {container_name}: {e}", "ERROR")
+        return {"exit_code": 1, "output": str(e), "error": str(e)}
 
     log_event(f"Successfully updated {container_name}", "GOOD")
-    return {"exit_code": 0, "output": "\n".join(output_lines)}
+    return {"exit_code": 0, "output": output}
 
 @app.post("/api/prune")
 async def prune_system():
