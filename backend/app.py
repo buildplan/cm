@@ -437,4 +437,8 @@ async def get_host_stats():
     except Exception: pass
     return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
 
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
 app.mount("/", StaticFiles(directory="/app/frontend", html=True), name="frontend")
