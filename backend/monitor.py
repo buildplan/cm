@@ -100,7 +100,7 @@ def get_latest_tag(tags, current_tag, strategy):
     elif strategy == "semver":
         pattern = re.compile(r'^v?\d+\.\d+(?:\.\d+)?$')
         valid_tags = [t for t in tags if pattern.match(t)]
-    
+
     if not valid_tags:
         return None
     valid_tags.sort(key=parse_version)
@@ -126,7 +126,7 @@ class Monitor:
         if "restarts" not in self.state: self.state["restarts"] = {}
         if "logs" not in self.state: self.state["logs"] = {}
         if "container_issues" not in self.state: self.state["container_issues"] = {}
-        
+
         self.on_update = kwargs.get('on_update')
 
     def save_state(self):
@@ -142,35 +142,35 @@ class Monitor:
         if not self.client:
             log_event("Cannot run monitor cycle: Docker client not initialized.", "ERROR")
             return
-        
+
         hc_url = self.config.get("general", {}).get("healthchecks_job_url", "")
         hc_fail_on = self.config.get("general", {}).get("healthchecks_fail_on", "")
         if hc_url:
             try: httpx.get(f"{hc_url.rstrip('/')}/start", timeout=5)
             except: pass
-            
+
         containers = self.client.containers.list(all=True)
         log_event(f"Found {len(containers)} containers to evaluate.", "INFO")
         monitor_defaults = self.config.get("containers", {}).get("monitor_defaults", [])
         exclude_updates = self.config.get("containers", {}).get("exclude", {}).get("updates", [])
-        
+
         auto_update_cfg = self.config.get("auto_update", {})
         au_enabled = str(auto_update_cfg.get("enabled", "false")).lower() == "true"
         au_tags = auto_update_cfg.get("tags", ["latest", "stable", "main", "master", "nightly"])
         au_include = auto_update_cfg.get("include", [])
         au_exclude = auto_update_cfg.get("exclude", [])
-        
+
         issues_found = {}
         containers_to_auto_update = []
-        
+
         for c in containers:
             name = c.name
             if monitor_defaults and name not in monitor_defaults:
                 continue
-                
+
             log_event(f"Evaluating container: {name}", "DEBUG")
             issues = []
-            
+
             # Status
             if c.status != "running":
                 issues.append(f"Status: {c.status}")
@@ -178,14 +178,14 @@ class Monitor:
                 health = c.attrs.get("State", {}).get("Health", {}).get("Status")
                 if health == "unhealthy":
                     issues.append("Status: Unhealthy")
-            
+
             # Restarts
             current_restarts = c.attrs.get("RestartCount", 0)
             saved_restarts = self.state["restarts"].get(name, 0)
             if current_restarts > saved_restarts:
                 issues.append(f"Restarts: {current_restarts} (was {saved_restarts})")
             self.state["restarts"][name] = current_restarts
-            
+
             # Resources (CPU/Mem)
             stats = None
             try:
@@ -195,14 +195,14 @@ class Monitor:
                 cpu_percent = 0.0
                 if system_delta > 0 and cpu_delta > 0:
                     cpu_percent = (cpu_delta / system_delta) * len(stats["cpu_stats"].get("cpu_usage", {}).get("percpu_usage", [1])) * 100.0
-                
+
                 mem_usage = stats["memory_stats"].get("usage", 0)
                 mem_limit = stats["memory_stats"].get("limit", 1)
                 mem_percent = (mem_usage / mem_limit) * 100.0
-                
+
                 cpu_warn = int(self.config.get("thresholds", {}).get("cpu_warning", 80))
                 mem_warn = int(self.config.get("thresholds", {}).get("memory_warning", 80))
-                
+
                 if cpu_percent > cpu_warn:
                     issues.append(f"Resources: CPU high ({cpu_percent:.1f}%)")
                     log_event(f"[{name}] CPU usage high: {cpu_percent:.1f}%", "WARNING")
@@ -211,7 +211,7 @@ class Monitor:
                     log_event(f"[{name}] Memory usage high: {mem_percent:.1f}%", "WARNING")
             except:
                 pass
-                
+
             # Disk Space
             disk_threshold = int(self.config.get("thresholds", {}).get("disk_space", 80))
             mounts = c.attrs.get("Mounts", [])
@@ -243,14 +243,14 @@ class Monitor:
                             issues.append(f"Network: {errors} errors/drops on {iface}")
                             log_event(f"[{name}] Network issues: {errors} errors/drops on {iface}", "WARNING")
                 except: pass
-                
+
             # Logs
             try:
                 lines = int(self.config.get("general", {}).get("log_lines_to_check", 20))
                 logs = c.logs(tail=lines).decode("utf-8", errors="ignore")
                 error_patterns = self.config.get("logs", {}).get("error_patterns", ["Exception", "SEVERE", "Traceback"])
                 ignore_patterns = self.config.get("logs", {}).get("ignore_patterns", {}).get(name, [])
-                
+
                 has_error = False
                 for line in logs.splitlines():
                     if any(re.search(ep, line, re.IGNORECASE) for ep in error_patterns):
@@ -262,7 +262,7 @@ class Monitor:
                     log_event(f"[{name}] Log errors detected.", "WARNING")
             except:
                 pass
-                
+
             # Updates
             try:
                 image_tags = c.image.tags
@@ -271,7 +271,7 @@ class Monitor:
                     cache_key = image_ref.replace("/", "_").replace(":", "_")
                     cached = self.state["updates"].get(cache_key)
                     cache_hours = int(self.config.get("general", {}).get("update_check_cache_hours", 6))
-                    
+
                     if not self.force and cached and (time.time() - cached.get("data", {}).get("timestamp", 0) < cache_hours * 3600):
                         if cached.get("data", {}).get("exit_code") == 100:
                             issues.append(f"Updates: {cached['data']['message']}")
@@ -279,11 +279,11 @@ class Monitor:
                         current_tag = "latest"
                         if ":" in image_ref:
                             current_tag = image_ref.split(":")[-1]
-                            
+
                         strategy = self.config.get("containers", {}).get("update_strategies", {}).get(image_ref, "")
                         if not strategy:
                             strategy = self.config.get("containers", {}).get("update_strategies", {}).get(name, "digest")
-                            
+
                         if strategy in ["semver", "major-lock"]:
                             log_event(f"[{name}] Checking remote tags for {image_ref} (Strategy: {strategy})", "DEBUG")
                             tags = get_registry_tags(image_ref)
@@ -311,7 +311,7 @@ class Monitor:
                             repo_digests = c.image.attrs.get("RepoDigests", [])
                             if repo_digests:
                                 local_digest = repo_digests[0].split("@")[-1]
-                            
+
                             remote_digest = reg_data.id
                             if local_digest and remote_digest and local_digest != remote_digest:
                                 msg = "Update available"
@@ -337,11 +337,11 @@ class Monitor:
             else:
                 if name in issues_found:
                     del issues_found[name]
-        
+
         self.state["container_issues"] = issues_found
         self.save_state()
         log_event(f"Monitor cycle completed. {len(issues_found)} containers have issues.", "INFO")
-        
+
         if containers_to_auto_update:
             log_event(f"Auto-update triggered for: {', '.join(containers_to_auto_update)}", "INFO")
             for au_name in containers_to_auto_update:
@@ -354,7 +354,7 @@ class Monitor:
                         log_event(f"Successfully auto-updated {au_name}", "GOOD")
                 except Exception as e:
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
-                    
+
         if hc_url:
             hc_failed = False
             fail_tags = [t.strip().lower() for t in hc_fail_on.split(",")] if hc_fail_on else []
@@ -379,13 +379,13 @@ class Monitor:
     def send_notifications(self, issues):
         channel = self.config.get("notifications", {}).get("channel", "none")
         if channel == "none": return
-        
+
         msg = "Container Issues Detected:\n"
         for name, issue in issues.items():
             msg += f"- {name}: {issue}\n"
-            
+
         title = "Docker Monitor Alert"
-        
+
         if channel == "discord":
             url = self.config.get("notifications", {}).get("discord", {}).get("webhook_url")
             if url and "your_discord" not in url:

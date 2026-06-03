@@ -374,10 +374,10 @@ async def update_config(request: Request):
         yaml_str = body.decode("utf-8")
         parsed_yaml = yaml.safe_load(yaml_str)
         AppConfig(**parsed_yaml)
-        
+
         with open(CONFIG_F, "w") as f:
             f.write(yaml_str)
-            
+
         new_interval = int(parsed_yaml.get("general", {}).get("monitor_interval_minutes", 360))
         scheduler.reschedule_job("monitor", trigger=IntervalTrigger(minutes=new_interval))
         log_event(f"Success: Rescheduled background monitor to run every {new_interval} minutes.", "API")
@@ -390,10 +390,10 @@ async def update_config_json(request: Request):
     try:
         data = await request.json()
         AppConfig(**data)
-        
+
         with open(CONFIG_F, "w") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-            
+
         new_interval = int(data.get("general", {}).get("monitor_interval_minutes", 360))
         scheduler.reschedule_job("monitor", trigger=IntervalTrigger(minutes=new_interval))
         log_event(f"Success: Rescheduled background monitor to run every {new_interval} minutes.", "API")

@@ -16,7 +16,7 @@ class StateManager:
                     value TEXT
                 )
             ''')
-            
+
             # Migrate from old JSON state if exists and db is empty
             cursor = conn.cursor()
             cursor.execute('SELECT COUNT(*) FROM state')
