@@ -482,15 +482,31 @@ async function loadConfig() {
         const res = await apiFetch("/api/config/json");
         const data = await res.json();
         if (res.ok) {
+            // General
             document.getElementById("f-schedule").value = data.general?.monitor_interval_minutes || 360;
             document.getElementById("f-cache").value = data.general?.update_check_cache_hours || 6;
+            document.getElementById("f-lock").value = data.general?.lock_timeout_seconds || 30;
+            document.getElementById("f-log-lines").value = data.general?.log_lines_to_check || 40;
             
+            // Thresholds
+            document.getElementById("f-t-cpu").value = data.thresholds?.cpu_warning || 80;
+            document.getElementById("f-t-mem").value = data.thresholds?.memory_warning || 80;
+            document.getElementById("f-t-disk").value = data.thresholds?.disk_space || 80;
+            document.getElementById("f-t-net").value = data.thresholds?.network_error || 10;
+
+            // Auto Update
             document.getElementById("f-au-enabled").checked = String(data.auto_update?.enabled).toLowerCase() === "true";
             document.getElementById("f-au-tags").value = (data.auto_update?.tags || []).join(", ");
+            document.getElementById("f-au-include").value = (data.auto_update?.include || []).join(", ");
             document.getElementById("f-au-exclude").value = (data.auto_update?.exclude || []).join(", ");
             
+            // Notifications
+            document.getElementById("f-notify-channel").value = data.notifications?.channel || "none";
+            document.getElementById("f-notify-on").value = data.notifications?.notify_on || "Updates,Logs";
             document.getElementById("f-discord").value = data.notifications?.discord?.webhook_url || "";
-            document.getElementById("f-hc-url").value = data.notifications?.healthchecks_io?.url || "";
+            document.getElementById("f-generic").value = data.notifications?.generic?.webhook_url || "";
+            document.getElementById("f-hc-url").value = data.general?.healthchecks_job_url || "";
+
         } else {
             showToast("Error loading config JSON", "error");
         }
@@ -527,18 +543,31 @@ async function saveConfig() {
             baseData.general = baseData.general || {};
             baseData.general.monitor_interval_minutes = parseInt(document.getElementById("f-schedule").value) || 360;
             baseData.general.update_check_cache_hours = parseInt(document.getElementById("f-cache").value) || 6;
+            baseData.general.lock_timeout_seconds = parseInt(document.getElementById("f-lock").value) || 30;
+            baseData.general.log_lines_to_check = parseInt(document.getElementById("f-log-lines").value) || 40;
+            baseData.general.healthchecks_job_url = document.getElementById("f-hc-url").value.trim();
+            
+            baseData.thresholds = baseData.thresholds || {};
+            baseData.thresholds.cpu_warning = parseInt(document.getElementById("f-t-cpu").value) || 80;
+            baseData.thresholds.memory_warning = parseInt(document.getElementById("f-t-mem").value) || 80;
+            baseData.thresholds.disk_space = parseInt(document.getElementById("f-t-disk").value) || 80;
+            baseData.thresholds.network_error = parseInt(document.getElementById("f-t-net").value) || 10;
             
             baseData.auto_update = baseData.auto_update || {};
             baseData.auto_update.enabled = document.getElementById("f-au-enabled").checked;
             baseData.auto_update.tags = document.getElementById("f-au-tags").value.split(",").map(s => s.trim()).filter(Boolean);
+            baseData.auto_update.include = document.getElementById("f-au-include").value.split(",").map(s => s.trim()).filter(Boolean);
             baseData.auto_update.exclude = document.getElementById("f-au-exclude").value.split(",").map(s => s.trim()).filter(Boolean);
             
             baseData.notifications = baseData.notifications || {};
+            baseData.notifications.channel = document.getElementById("f-notify-channel").value;
+            baseData.notifications.notify_on = document.getElementById("f-notify-on").value.trim() || "Updates,Logs";
+            
             baseData.notifications.discord = baseData.notifications.discord || {};
             baseData.notifications.discord.webhook_url = document.getElementById("f-discord").value.trim();
             
-            baseData.notifications.healthchecks_io = baseData.notifications.healthchecks_io || {};
-            baseData.notifications.healthchecks_io.url = document.getElementById("f-hc-url").value.trim();
+            baseData.notifications.generic = baseData.notifications.generic || {};
+            baseData.notifications.generic.webhook_url = document.getElementById("f-generic").value.trim();
 
             res = await apiFetch("/api/config/json", {
                 method: "PUT",
