@@ -347,7 +347,7 @@ async def get_monitor_log(lines: int = 200):
     return {"lines": LOG_F.read_text().splitlines()[-lines:]}
 
 @app.get("/api/config")
-def get_config(request: Request, token: str = Depends(token_auth)):
+def get_config():
     try:
         with open(CONFIG_F, "r") as f:
             return PlainTextResponse(f.read())
@@ -355,7 +355,7 @@ def get_config(request: Request, token: str = Depends(token_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/config/json")
-def get_config_json(request: Request, token: str = Depends(token_auth)):
+def get_config_json():
     try:
         with open(CONFIG_F, "r") as f:
             return yaml.safe_load(f)
@@ -363,7 +363,7 @@ def get_config_json(request: Request, token: str = Depends(token_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/config")
-async def update_config(request: Request, token: str = Depends(token_auth)):
+async def update_config(request: Request):
     try:
         body = await request.body()
         yaml_str = body.decode("utf-8")
@@ -381,7 +381,7 @@ async def update_config(request: Request, token: str = Depends(token_auth)):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.put("/api/config/json")
-async def update_config_json(request: Request, token: str = Depends(token_auth)):
+async def update_config_json(request: Request):
     try:
         data = await request.json()
         AppConfig(**data)
