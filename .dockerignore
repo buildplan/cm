@@ -1,20 +1,36 @@
-docker-compose.yml
-README.md
-renovate.json
-.dockerignore
+# Git
+.git
+.gitignore
 .github/
 
-backend/__pycache__/
-
-data/
-compose-prod*
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
 docker-compose-*
+compose-prod*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
 .env*
 .env
-.DS_Store
-Thumbs.db
+
+# Data and State
+data/
 *.bak
 
+# IDE & OS
+.DS_Store
+Thumbs.db
+
+# Project Files
+README.md
+LICENSE
+renovate.json
+
+# AI Assistant
 .antigravitycli/
 ANTIGRAVITY.md
 AGENTS.md
