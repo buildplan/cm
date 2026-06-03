@@ -1,22 +1,23 @@
 # Container Monitor
 
-Container Monitor is a lightweight, containerized web application and background service for tracking, managing, and updating Docker containers. It provides a web interface for daily administration and an automated background script for monitoring container health and applying image updates.
+Container Monitor is a lightweight, secure, and fully containerized web application for tracking, managing, and automatically updating Docker containers. It provides a web interface for daily administration and an efficient Python-based background engine.
 
 ## Features
 
-* **Dashboard & Controls:** View host system utilization and container status. Manage container lifecycles (Start, Stop, Restart, Pull, Recreate) directly from the web interface.
-* **Log Viewer:** Access application logs for the background monitor and individual container logs without requiring CLI access.
-* **Automated Updates:** Configurable auto-update engine that pulls new images and recreates containers based on tag strategies (e.g., digest matching for `latest` tags or semver matching).
-* **Resource Monitoring:** Tracks CPU, memory, disk space, and network errors against configurable thresholds.
+* **Real-Time Dashboard:** View host system utilization and live container status. Updates are pushed instantly to the UI via Server-Sent Events (SSE) without polling overhead.
+* **Full Lifecycle Controls:** Manage containers (Start, Stop, Restart, Pull, Recreate) directly from the web interface.
+* **Automated Updates:** Configurable auto-update engine that queries the Docker Registry V2 API to pull new images and recreate containers based on tag strategies (`latest`, digest matching, or semver).
+* **Resource Monitoring:** Tracks CPU, memory, disk space, and network errors directly via the native Docker API for maximum performance.
+* **Live Configuration UI:** Edit settings through a Visual UI or a raw YAML editor. The Pydantic-validated backend catches errors instantly and reschedules background tasks on the fly—no container restarts required.
+* **Log Viewer:** Access application logs and follow live container logs with dynamic filtering, mirroring `docker logs -f` directly in your browser.
 * **Notifications:** Supports alerts via Discord webhooks, Ntfy, or generic JSON webhooks.
-* **Healthchecks.io Integration:** Supports start/fail/up pinging for the background cron job.
-* **Security:** Designed to operate behind a Docker Socket Proxy to prevent direct root socket mounting. Includes token-based authentication for the web interface.
+* **Security First:** Operates behind a Docker Socket Proxy (read-only where possible). Features Bearer token authentication and uses `dumb-init` to securely eradicate zombie processes.
 
 ## Architecture
 
-* **Backend:** FastAPI (Python) and Bash.
-* **Frontend:** Vanilla JavaScript, HTML, and Tailwind CSS.
-* **Base Image:** Alpine Linux (Multi-stage build).
+* **Backend:** Python (FastAPI, APScheduler, custom Docker Registry V2 client).
+* **Frontend:** Vanilla JavaScript, Tailwind CSS, SVG icons, and SSE reactivity (no heavy build tools).
+* **Base Image:** Alpine Linux (Multi-stage build). Optimized with `dumb-init` acting as PID 1.
 
 ## Deployment
 
@@ -121,11 +122,11 @@ Access the web interface at `http://<your-host-ip>:9000` and log in using the `S
 
 The application uses a two-tier configuration system.
 
-1. **Environment Variables (Initialization):** When the container boots for the first time, it reads the environment variables from the `docker-compose.yml` and generates a structured `config.yml` file in the mapped `./data` directory. It also queries the Docker socket to automatically populate the monitoring list with currently running containers.
-2. **YAML Configuration (Runtime):** Once `config.yml` is generated, it acts as the source of truth. You can modify this file directly via the web UI's "Settings" tab. The backend includes a strict YAML linter that validates syntax before saving changes to disk.
+1. **Environment Variables (Initialization):** When the container boots for the first time, it reads the environment variables from compose file and generates a structured `config.yml` in the mapped `./data` directory. It also auto-discovers currently running containers.
+2. **Live UI Configuration (Runtime):** Once generated, `config.yml` becomes the source of truth. You can easily modify settings via the web UI's **Visual Editor** or the advanced **YAML Editor**. Thanks to backend Pydantic validation, syntax errors are caught instantly, and background monitoring schedules are updated live without ever needing to restart the container.
 
 ## Security Notes
 
-* **Docker Socket:** Avoid mounting `/var/run/docker.sock` directly into the `container-monitor` container. Using the `linuxserver/socket-proxy` limits the attack surface by only exposing necessary API endpoints.
-* **Authentication:** The web UI is protected by a Bearer token mechanism. Set a strong `SECRET_TOKEN` in your environment variables. Without this token, the API will return HTTP 401 Unauthorized for all requests.
-* **Compose Paths:** The `working_dir` of your containers must be mapped identically inside the `container-monitor` container (e.g., `/opt/docker:/opt/docker`) so the script can execute `docker compose pull` and `up -d` commands accurately during update cycles.
+* **Docker Socket:** Avoid mounting `/var/run/docker.sock` directly into the `container-monitor` container. Using the `linuxserver/socket-proxy` limits the attack surface by only exposing necessary API endpoints over TCP.
+* **Authentication:** The web UI is protected by a Bearer token mechanism. Set a strong `SECRET_TOKEN` in your environment variables. Without this token, the API will return HTTP 401 Unauthorized.
+* **Compose Paths:** The `working_dir` of your containers must be mapped identically inside the `container-monitor` container (e.g., `/opt/docker:/opt/docker`) so the Python engine can correctly execute `docker compose pull` and `up -d` commands during auto-update cycles.
