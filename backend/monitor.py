@@ -18,7 +18,7 @@ import subprocess
 def execute_compose_update(working_dir: str, container_name: str):
     import os
     client = docker.from_env()
-    
+
     if Path(working_dir).is_dir():
         # Fast path: directory is mounted locally in this container
         pull_res = subprocess.run(["docker", "compose", "pull"], cwd=working_dir, capture_output=True, text=True)
@@ -32,14 +32,14 @@ def execute_compose_update(working_dir: str, container_name: str):
     env = {}
     if "DOCKER_HOST" in os.environ:
         env["DOCKER_HOST"] = os.environ["DOCKER_HOST"]
-        
+
     try:
         client.images.get("docker:cli")
     except docker.errors.ImageNotFound:
         client.images.pull("docker:cli")
-        
+
     log_event(f"[{container_name}] Path {working_dir} not mounted locally. Using ephemeral container to auto-mount from host.", "INFO")
-    
+
     logs = client.containers.run(
         image="docker:cli",
         entrypoint="sh",
@@ -119,6 +119,61 @@ def get_registry_tags(image_name):
     except Exception:
         pass
     return []
+
+def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
+    if ":" in image_ref:
+        image_name, tag = image_ref.rsplit(":", 1)
+    else:
+        image_name = image_ref
+        tag = "latest"
+    registry = "registry-1.docker.io"
+    repo = image_name
+    if "/" in image_name:
+        parts = image_name.split("/", 1)
+        if "." in parts[0] or ":" in parts[0] or parts[0] == "localhost":
+            registry = parts[0]
+            repo = parts[1]
+    else:
+        repo = f"library/{image_name}"
+    url = f"https://{registry}/v2/"
+    digests = set()
+    try:
+        r = httpx.get(url, timeout=10)
+        token = ""
+        if r.status_code == 401:
+            auth = r.headers.get("Www-Authenticate", "")
+            if auth.lower().startswith("bearer"):
+                realm_m = re.search(r'realm="([^"]+)"', auth)
+                service_m = re.search(r'service="([^"]+)"', auth)
+                if realm_m:
+                    realm = realm_m.group(1)
+                    service = service_m.group(1) if service_m else ""
+                    auth_url = f"{realm}?service={service}&scope=repository:{repo}:pull"
+                    tr = httpx.get(auth_url, timeout=10)
+                    if tr.status_code == 200:
+                        token = tr.json().get("token") or tr.json().get("access_token")
+        headers = {
+            "Accept": "application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        manifest_url = f"https://{registry}/v2/{repo}/manifests/{tag}"
+        resp = httpx.get(manifest_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            manifest_list_digest = resp.headers.get("Docker-Content-Digest")
+            if manifest_list_digest:
+                digests.add(manifest_list_digest)
+            content_type = resp.headers.get("Content-Type", "")
+            if "manifest.list" in content_type or "image.index" in content_type:
+                data = resp.json()
+                for m in data.get("manifests", []):
+                    plat = m.get("platform", {})
+                    if plat.get("architecture") == architecture and plat.get("os") == os_name:
+                        if m.get("digest"):
+                            digests.add(m.get("digest"))
+    except Exception:
+        pass
+    return list(digests)
 
 def parse_version(tag):
     m = re.search(r'^v?(\d+)\.(\d+)(?:\.(\d+))?', tag)
@@ -343,14 +398,31 @@ class Monitor:
                                 }
                         else:
                             log_event(f"[{name}] Checking remote digest for {image_ref} (Strategy: digest)", "DEBUG")
-                            reg_data = self.client.images.get_registry_data(image_ref)
+                            local_arch = c.image.attrs.get("Architecture", "amd64")
+                            local_os = c.image.attrs.get("Os", "linux")
+
                             local_digests = []
                             repo_digests = c.image.attrs.get("RepoDigests", [])
                             if repo_digests:
                                 local_digests = [rd.split("@")[-1] for rd in repo_digests]
 
-                            remote_digest = reg_data.id
-                            if local_digests and remote_digest and remote_digest not in local_digests:
+                            try:
+                                reg_data = self.client.images.get_registry_data(image_ref)
+                                remote_digest = reg_data.id
+                            except Exception:
+                                remote_digest = None
+
+                            remote_digests = []
+                            if remote_digest:
+                                remote_digests.append(remote_digest)
+
+                            http_digests = get_remote_digests(image_ref, local_arch, local_os)
+                            if http_digests:
+                                remote_digests.extend(http_digests)
+
+                            remote_digests = list(set(remote_digests))
+
+                            if local_digests and remote_digests and not any(rd in local_digests for rd in remote_digests):
                                 msg = "Update available"
                                 log_event(f"[{name}] UPDATE FOUND: New digest available for {image_ref}", "INFO")
                                 self.state["updates"][cache_key] = {
