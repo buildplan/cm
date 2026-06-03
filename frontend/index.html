@@ -13,7 +13,7 @@
         ::-webkit-scrollbar-thumb:hover { background: #4B5563; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col items-center p-6 bg-[#0B1120]">
+<body class="min-h-screen flex flex-col items-center p-6 bg-[#0B1120] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-900/10 via-[#0B1120] to-black selection:bg-cyan-500/30">
     <div id="auth-screen" class="w-full max-w-md mt-20 bg-gray-800/50 p-8 rounded-2xl shadow-2xl border border-gray-700/50 hidden backdrop-blur-sm">
         <div class="flex items-center gap-3 mb-6 justify-center">
             <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
@@ -42,11 +42,11 @@
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                     <span class="whitespace-nowrap">Update All (<span id="update-count">0</span>)</span>
                 </button>
-                <button id="force-check-btn" onclick="triggerRun(true)" class="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 md:px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 flex-1 md:flex-none justify-center" title="Bypass cache and force Skopeo to check remote registries">
+                <button id="force-check-btn" onclick="triggerRun(true)" class="bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 px-3 md:px-4 py-2 rounded-lg font-medium transition-all duration-300 hover:shadow-[0_0_15px_rgba(168,85,247,0.3)] flex items-center gap-2 flex-1 md:flex-none justify-center" title="Bypass cache and force Skopeo to check remote registries">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                     <span class="whitespace-nowrap">Force Check</span>
                 </button>
-                <button id="run-check-btn" onclick="triggerRun(false)" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white px-3 md:px-4 py-2 rounded-lg font-medium transition flex items-center gap-2 flex-1 md:flex-none justify-center" title="Run standard check (uses 6-hour cache)">
+                <button id="run-check-btn" onclick="triggerRun(false)" class="bg-cyan-600/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 px-3 md:px-4 py-2 rounded-lg font-medium transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.3)] flex items-center gap-2 flex-1 md:flex-none justify-center" title="Run standard check (uses 6-hour cache)">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                     <span class="whitespace-nowrap">Run Check</span>
                 </button>
@@ -57,7 +57,7 @@
         </header>
 
         <div id="host-stats-bar" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-gray-800/40 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm">
+            <div class="bg-gray-800/20 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-md transition-all duration-300 hover:bg-gray-800/40 hover:border-gray-600 shadow-lg">
                 <div>
                     <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">CPU Load (1m)</p>
                     <p id="stat-cpu" class="text-4xl font-light text-white">--</p>
@@ -66,7 +66,7 @@
                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
                 </div>
             </div>
-            <div class="bg-gray-800/40 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm">
+            <div class="bg-gray-800/20 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-md transition-all duration-300 hover:bg-gray-800/40 hover:border-gray-600 shadow-lg">
                 <div>
                     <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Memory</p>
                     <div class="flex items-baseline gap-3">
@@ -78,7 +78,7 @@
                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 </div>
             </div>
-            <div class="bg-gray-800/40 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-sm">
+            <div class="bg-gray-800/20 border border-gray-700/50 p-6 rounded-2xl flex items-center justify-between backdrop-blur-md transition-all duration-300 hover:bg-gray-800/40 hover:border-gray-600 shadow-lg">
                 <div>
                     <p class="text-xs text-gray-500 font-bold uppercase tracking-widest mb-1">Disk (<span id="stat-disk-fs" class="uppercase">/</span>)</p>
                     <div class="flex items-baseline gap-3">
@@ -95,12 +95,68 @@
         <div id="dashboard-view" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"></div>
 
         <div id="settings-view" class="w-full hidden bg-gray-800/50 rounded-2xl border border-gray-700/50 p-8 backdrop-blur-sm">
-            <div class="flex items-center gap-3 mb-2">
-                <svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <div class="flex items-center justify-between mb-6 border-b border-gray-700/50 pb-4">
                 <h2 class="text-2xl font-bold text-white">Configuration</h2>
+                <div class="flex bg-gray-900/50 rounded-lg p-1 border border-gray-700">
+                    <button id="tab-visual" onclick="switchConfigTab('visual')" class="px-4 py-1.5 text-sm font-bold rounded-md bg-gray-700 text-white shadow transition-all">Visual</button>
+                    <button id="tab-yaml" onclick="switchConfigTab('yaml')" class="px-4 py-1.5 text-sm font-medium rounded-md text-gray-400 hover:text-white transition-all">YAML</button>
+                </div>
             </div>
-            <p class="text-sm text-gray-400 mb-6">Edit your parameters directly in <code>config.yml</code>. Valid YAML required.</p>
-            <textarea id="config-editor" class="w-full h-[600px] bg-[#0d1117] text-emerald-400 p-6 rounded-xl border border-gray-700 font-mono text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition selection:bg-emerald-900/50" spellcheck="false"></textarea>
+            
+            <div id="config-visual-view" class="space-y-8">
+                <div class="bg-gray-800/20 backdrop-blur-sm border border-gray-700 p-6 rounded-xl">
+                    <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg> General</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Schedule (Minutes)</label>
+                            <input type="number" id="f-schedule" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 focus:ring-1 focus:ring-cyan-500 outline-none" min="1" placeholder="30">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Update Cache (Hours)</label>
+                            <input type="number" id="f-cache" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 focus:ring-1 focus:ring-cyan-500 outline-none" min="0" placeholder="6">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800/20 backdrop-blur-sm border border-gray-700 p-6 rounded-xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2"><svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Auto-Update</h3>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="f-au-enabled" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                        </label>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Include Tags (Comma separated)</label>
+                            <input type="text" id="f-au-tags" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="latest, stable">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Exclude Containers (Comma separated)</label>
+                            <input type="text" id="f-au-exclude" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 focus:ring-1 focus:ring-emerald-500 outline-none" placeholder="db, redis">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800/20 backdrop-blur-sm border border-gray-700 p-6 rounded-xl">
+                    <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2"><svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg> Notifications</h3>
+                    <div class="grid grid-cols-1 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Discord Webhook URL</label>
+                            <input type="text" id="f-discord" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 focus:ring-1 focus:ring-purple-500 outline-none" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-400 mb-1">Healthchecks.io Ping URL</label>
+                            <input type="text" id="f-hc-url" class="w-full bg-gray-900 border border-gray-700 text-white rounded-lg px-4 py-2 focus:ring-1 focus:ring-purple-500 outline-none" placeholder="https://hc-ping.com/...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="config-yaml-view" class="hidden">
+                <p class="text-sm text-gray-400 mb-4">Advanced editor for full <code>config.yml</code> control.</p>
+                <textarea id="config-editor" class="w-full h-[600px] bg-[#0d1117]/80 backdrop-blur-sm text-emerald-400 p-6 rounded-xl border border-gray-700 font-mono text-sm focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition shadow-inner selection:bg-emerald-900/50" spellcheck="false"></textarea>
+            </div>
             <div class="mt-6 flex justify-between items-center">
                 <span id="config-save-status" class="text-sm font-medium"></span>
                 <button onclick="saveConfig()" class="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 px-8 rounded-lg transition shadow-lg shadow-cyan-900/20">💾 Save Configuration</button>
@@ -129,7 +185,7 @@
                     Refresh Logs
                 </button>
             </div>
-            <div id="app-logs-content" class="w-full flex-1 bg-[#0d1117] text-gray-300 p-6 rounded-xl border border-gray-700 font-mono text-sm overflow-y-auto whitespace-pre-wrap selection:bg-gray-700">
+            <div id="app-logs-content" class="w-full flex-1 bg-[#0d1117]/80 backdrop-blur-sm shadow-inner text-gray-300 p-6 rounded-xl border border-gray-700 font-mono text-sm overflow-y-auto whitespace-pre-wrap selection:bg-gray-700">
                 Loading logs...
             </div>
         </div>

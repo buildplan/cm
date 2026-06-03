@@ -7,12 +7,14 @@ import time
 import httpx
 from datetime import datetime
 from pathlib import Path
+from backend.state import StateManager
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 CONFIG_F = DATA_DIR / "config.yml"
-STATE_F = DATA_DIR / ".monitor_state.json"
+STATE_DB = DATA_DIR / "monitor_state.db"
 LOG_F = DATA_DIR / "container-monitor.log"
 
+import subprocess
 def log_event(msg: str, level="INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
@@ -105,7 +107,7 @@ def get_latest_tag(tags, current_tag, strategy):
     return valid_tags[-1]
 
 class Monitor:
-    def __init__(self, force=False):
+    def __init__(self, force=False, **kwargs):
         self.force = force
         self.config = {}
         if CONFIG_F.exists():
@@ -117,21 +119,21 @@ class Monitor:
             self.client = None
             log_event(f"Docker connection failed: {e}", "ERROR")
 
-        self.state = {"updates": {}, "restarts": {}, "logs": {}, "container_issues": {}}
-        if STATE_F.exists():
-            try:
-                with open(STATE_F, "r") as f:
-                    data = json.load(f)
-                    self.state.update(data)
-            except: pass
+        self.state_mgr = StateManager(STATE_DB)
+        self.state = self.state_mgr.get_all()
 
-        if "container_issues" not in self.state:
-            self.state["container_issues"] = {}
+        if "updates" not in self.state: self.state["updates"] = {}
+        if "restarts" not in self.state: self.state["restarts"] = {}
+        if "logs" not in self.state: self.state["logs"] = {}
+        if "container_issues" not in self.state: self.state["container_issues"] = {}
+        
+        self.on_update = kwargs.get('on_update')
 
     def save_state(self):
         try:
-            with open(STATE_F, "w") as f:
-                json.dump(self.state, f, indent=2)
+            self.state_mgr.update(self.state)
+            if self.on_update:
+                self.on_update("state_changed", self.state)
         except Exception as e:
             log_event(f"Failed to save state: {e}", "ERROR")
 
@@ -150,7 +152,14 @@ class Monitor:
         monitor_defaults = self.config.get("containers", {}).get("monitor_defaults", [])
         exclude_updates = self.config.get("containers", {}).get("exclude", {}).get("updates", [])
         
+        auto_update_cfg = self.config.get("auto_update", {})
+        au_enabled = str(auto_update_cfg.get("enabled", "false")).lower() == "true"
+        au_tags = auto_update_cfg.get("tags", ["latest", "stable", "main", "master", "nightly"])
+        au_include = auto_update_cfg.get("include", [])
+        au_exclude = auto_update_cfg.get("exclude", [])
+        
         issues_found = {}
+        containers_to_auto_update = []
         
         for c in containers:
             name = c.name
@@ -277,6 +286,9 @@ class Monitor:
                                     "data": {"message": msg, "exit_code": 100, "timestamp": int(time.time())}
                                 }
                                 issues.append(f"Updates: {msg}")
+                                if au_enabled and (current_tag in au_tags):
+                                    if (not au_exclude or name not in au_exclude) and (not au_include or name in au_include):
+                                        containers_to_auto_update.append(name)
                             else:
                                 self.state["updates"][cache_key] = {
                                     "key": cache_key, "image_ref": image_ref,
@@ -297,6 +309,9 @@ class Monitor:
                                     "data": {"message": msg, "exit_code": 100, "timestamp": int(time.time())}
                                 }
                                 issues.append(f"Updates: {msg}")
+                                if au_enabled and (current_tag in au_tags):
+                                    if (not au_exclude or name not in au_exclude) and (not au_include or name in au_include):
+                                        containers_to_auto_update.append(name)
                             else:
                                 self.state["updates"][cache_key] = {
                                     "key": cache_key, "image_ref": image_ref,
@@ -314,6 +329,19 @@ class Monitor:
         self.state["container_issues"] = issues_found
         self.save_state()
         
+        if containers_to_auto_update:
+            log_event(f"Auto-update triggered for: {', '.join(containers_to_auto_update)}", "INFO")
+            for au_name in containers_to_auto_update:
+                try:
+                    inspect = subprocess.run(["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', au_name], capture_output=True, text=True)
+                    wdir = inspect.stdout.strip()
+                    if wdir and Path(wdir).is_dir():
+                        subprocess.run(["docker", "compose", "pull"], cwd=wdir, capture_output=True)
+                        subprocess.run(["docker", "compose", "up", "-d", "--force-recreate"], cwd=wdir, capture_output=True)
+                        log_event(f"Successfully auto-updated {au_name}", "GOOD")
+                except Exception as e:
+                    log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
+                    
         if hc_url:
             hc_failed = False
             fail_tags = [t.strip().lower() for t in hc_fail_on.split(",")] if hc_fail_on else []
