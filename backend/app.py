@@ -15,7 +15,7 @@ app = FastAPI(title="Container Monitor API")
 scheduler = AsyncIOScheduler()
 
 DATA_DIR  = Path(os.environ.get("DATA_DIR", "/app/data"))
-SCRIPT    = Path("/app/backend/container-monitor.sh")
+
 STATE_F   = DATA_DIR / ".monitor_state.json"
 CONFIG_F  = DATA_DIR / "config.yml"
 LOG_F     = DATA_DIR / "container-monitor.log"
@@ -130,29 +130,15 @@ async def token_auth(request: Request, call_next):
                 return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     return await call_next(request)
 
-def script_env():
-    return {
-        **os.environ,
-        "DATA_DIR": str(DATA_DIR),
-        "CONTAINER_MODE": "true",
-        "HOST_DISK_CHECK_FILESYSTEM": os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs"),
-    }
-
-async def run_script(*args) -> tuple[int, str]:
-    cmd = [str(SCRIPT), *args]
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=script_env()
-        )
-        out, _ = await proc.communicate()
-        return proc.returncode, out.decode("utf-8", errors="replace")
-    except Exception as e:
-        error_msg = f"❌ Backend Execution Error: {str(e)}"
-        return 1, error_msg
+from backend.monitor import Monitor, get_container_logs
 
 async def scheduled_run():
     log_event("Triggering scheduled background check...", "API")
-    await run_script("--summary")
+    try:
+        monitor = Monitor()
+        monitor.run()
+    except Exception as e:
+        log_event(f"Scheduled run failed: {e}", "ERROR")
 
 @app.on_event("startup")
 async def startup():
@@ -236,9 +222,12 @@ async def get_containers():
 @app.post("/api/run")
 async def trigger_run(force: bool = False):
     log_event(f"Manual monitor check triggered (Force cache bypass: {force})", "API")
-    args = ["--summary", "--force"] if force else ["--summary"]
-    code, out = await run_script(*args)
-    return {"exit_code": code, "output": out}
+    try:
+        monitor = Monitor(force=force)
+        monitor.run()
+        return {"exit_code": 0, "output": "Monitoring completed successfully"}
+    except Exception as e:
+        return {"exit_code": 1, "output": str(e)}
 
 @app.post("/api/update/{container_name:path}")
 async def update_container(container_name: str):
@@ -326,11 +315,8 @@ async def update_config(data: ConfigUpdate):
     return {"status": "saved"}
 
 @app.get("/api/container-logs/{container_name:path}")
-async def get_container_logs(container_name: str, filter: str = ""):
-    args = ["--logs", container_name]
-    if filter:
-        args.append(filter)
-    code, out = await run_script(*args)
+async def container_logs(container_name: str, filter: str = ""):
+    out = get_container_logs(container_name, filter)
     return {"output": out}
 
 @app.get("/api/host-stats")
