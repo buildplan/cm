@@ -295,6 +295,11 @@ async def get_state():
     mgr = StateManager(STATE_DB)
     return mgr.get_all()
 
+@app.get("/api/metrics/{container_name:path}")
+async def get_container_metrics(container_name: str, hours: int = 24):
+    mgr = StateManager(STATE_DB)
+    return mgr.get_metrics(container_name, hours)
+
 @app.get("/api/containers")
 async def get_containers():
     result = subprocess.run(["docker", "ps", "-a", "--format", "{{json .}}"], capture_output=True, text=True)

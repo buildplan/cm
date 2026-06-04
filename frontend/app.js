@@ -224,19 +224,19 @@ async function refreshDashboard() {
                     </div>
 
                     <div class="mt-5 pt-4 border-t border-gray-700/50 flex gap-3 opacity-80 group-hover:opacity-100 transition-opacity">
-                        <button onclick="viewLogs('${name}')" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-300 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2">
+                        <button onclick="viewLogs('${name}')" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-300 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Logs">
                             <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                            Logs
+                        </button>
+                        <button onclick="viewMetrics('${name}')" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-cyan-400 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Metrics">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
                         </button>
                         ${hasUpdate ? `
-                            <button onclick="updateContainer('${name}', this)" class="flex-1 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs font-medium px-3 py-2 rounded-lg transition flex justify-center items-center gap-2">
+                            <button onclick="updateContainer('${name}', this)" class="flex-[2] bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs font-medium px-3 py-2 rounded-lg transition flex justify-center items-center gap-2" title="Update">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                                Update
                             </button>
                         ` : `
-                            <button onclick="updateContainer('${name}', this)" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-gray-400 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Force Pull & Recreate">
+                            <button onclick="updateContainer('${name}', this)" class="flex-[2] bg-gray-900/50 hover:bg-gray-700 text-gray-400 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Force Pull & Recreate">
                                 <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                                Pull
                             </button>
                         `}
                     </div>
@@ -425,6 +425,121 @@ function closeLogModal() {
         modal.classList.remove("flex");
         document.getElementById("log-modal-content").innerText = "";
     }, 200);
+}
+
+// --- Metrics Logic ---
+let metricsChartInstance = null;
+
+async function viewMetrics(name) {
+    const modal = document.getElementById("metrics-modal");
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    requestAnimationFrame(() => modal.classList.remove("opacity-0"));
+    document.getElementById("metrics-modal-title").innerText = `Metrics: ${name} (Last 24h)`;
+    
+    try {
+        const res = await apiFetch(`/api/metrics/${name}`);
+        const data = await res.json();
+        renderChart(data);
+    } catch(e) {
+        showToast("Failed to load metrics", "error");
+    }
+}
+
+function closeMetricsModal() {
+    const modal = document.getElementById("metrics-modal");
+    modal.classList.add("opacity-0");
+    setTimeout(() => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }, 200);
+}
+
+function renderChart(data) {
+    const ctx = document.getElementById('metrics-chart').getContext('2d');
+    
+    if (metricsChartInstance) {
+        metricsChartInstance.destroy();
+    }
+    
+    let labels = [];
+    let cpuData = [];
+    let memData = [];
+
+    if (data && data.length > 0) {
+        labels = data.map(d => {
+            const date = new Date(d.t * 1000);
+            return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        });
+        cpuData = data.map(d => d.cpu);
+        memData = data.map(d => d.mem);
+    } else {
+        // Provide placeholder data so the chart framework still renders empty axes
+        labels = ["No Data Yet"];
+        cpuData = [0];
+        memData = [0];
+    }
+
+    metricsChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'CPU Usage (%)',
+                    data: cpuData,
+                    borderColor: '#22d3ee',
+                    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Memory Usage (%)',
+                    data: memData,
+                    borderColor: '#a855f7',
+                    backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    labels: { color: '#9ca3af' }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                    titleColor: '#fff',
+                    bodyColor: '#cbd5e1',
+                    borderColor: '#334155',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    grid: { color: 'rgba(71, 85, 105, 0.2)' },
+                    ticks: { color: '#9ca3af' }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#9ca3af', maxTicksLimit: 12 }
+                }
+            }
+        }
+    });
 }
 
 // --- Tab & Settings Logic ---
