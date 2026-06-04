@@ -94,6 +94,17 @@ def execute_python_update(container_name: str):
         run_kwargs["ipc_mode"] = host_config.get("IpcMode")
         run_kwargs["pid_mode"] = host_config.get("PidMode")
         run_kwargs["volumes"] = host_config.get("Binds")
+        run_kwargs["security_opt"] = host_config.get("SecurityOpt")
+        run_kwargs["dns"] = host_config.get("Dns")
+        run_kwargs["sysctls"] = host_config.get("Sysctls")
+        run_kwargs["tmpfs"] = host_config.get("Tmpfs")
+        
+        extra_hosts = host_config.get("ExtraHosts")
+        if extra_hosts:
+            if isinstance(extra_hosts, list):
+                run_kwargs["extra_hosts"] = {eh.split(':')[0]: eh.split(':', 1)[1] for eh in extra_hosts if ':' in eh}
+            else:
+                run_kwargs["extra_hosts"] = extra_hosts
 
         rp = host_config.get("RestartPolicy")
         if rp and rp.get("Name"):
