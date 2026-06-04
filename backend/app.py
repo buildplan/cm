@@ -61,6 +61,13 @@ def log_event(msg: str, level="INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
     try:
+        if LOG_F.exists() and LOG_F.stat().st_size > 10 * 1024 * 1024:
+            with open(LOG_F, "r") as f:
+                f.seek(0, 2)
+                f.seek(max(f.tell() - 1024 * 1024, 0))
+                tail = f.read()
+            with open(LOG_F, "w") as f:
+                f.write(tail[tail.find("\n") + 1 :])
         with open(LOG_F, "a") as f:
             f.write(log_line)
     except Exception:
