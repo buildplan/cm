@@ -37,3 +37,7 @@ AGENTS.md
 
 # Testing
 tests/
+
+# Lint / Config
+biome.json
+

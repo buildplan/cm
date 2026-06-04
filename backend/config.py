@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Any
+from typing import List, Dict
+
 
 class GeneralConfig(BaseModel):
     monitor_interval_minutes: int = 360
@@ -10,15 +11,18 @@ class GeneralConfig(BaseModel):
     healthchecks_job_url: str = ""
     healthchecks_fail_on: str = ""
 
+
 class LogsConfig(BaseModel):
     error_patterns: List[str] = ["Exception", "SEVERE", "Traceback"]
     log_clean_pattern: str = "^[^ ]+[\\s]+"
     ignore_patterns: Dict[str, List[str]] = {}
 
+
 class AuthConfig(BaseModel):
     docker_username: str = ""
     docker_password: str = ""
     docker_config_path: str = "~/.docker/config.json"
+
 
 class ThresholdsConfig(BaseModel):
     cpu_warning: int = 80
@@ -26,14 +30,18 @@ class ThresholdsConfig(BaseModel):
     disk_space: int = 80
     network_error: int = 10
 
+
 class HostSystemConfig(BaseModel):
     disk_check_filesystem: str = "/"
+
 
 class DiscordConfig(BaseModel):
     webhook_url: str = ""
 
+
 class GenericConfig(BaseModel):
     webhook_url: str = ""
+
 
 class NtfyConfig(BaseModel):
     server_url: str = "https://ntfy.sh"
@@ -43,6 +51,7 @@ class NtfyConfig(BaseModel):
     icon_url: str = ""
     click_url: str = ""
 
+
 class NotificationsConfig(BaseModel):
     channel: str = "none"
     notify_on: str = "Updates,Logs"
@@ -50,8 +59,10 @@ class NotificationsConfig(BaseModel):
     generic: GenericConfig = Field(default_factory=GenericConfig)
     ntfy: NtfyConfig = Field(default_factory=NtfyConfig)
 
+
 class ExcludeConfig(BaseModel):
     updates: List[str] = []
+
 
 class ContainersConfig(BaseModel):
     monitor_defaults: List[str] = []
@@ -59,11 +70,13 @@ class ContainersConfig(BaseModel):
     update_strategies: Dict[str, str] = {}
     exclude: ExcludeConfig = Field(default_factory=ExcludeConfig)
 
+
 class AutoUpdateConfig(BaseModel):
     enabled: bool = False
     tags: List[str] = []
     include: List[str] = []
     exclude: List[str] = []
+
 
 class AppConfig(BaseModel):
     general: GeneralConfig = Field(default_factory=GeneralConfig)

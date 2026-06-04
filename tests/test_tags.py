@@ -1,4 +1,5 @@
 import docker
+
 client = docker.from_env()
 for c in client.containers.list():
     tags = c.image.tags
