@@ -52,6 +52,110 @@ def execute_compose_update(working_dir: str, container_name: str):
     )
     return logs.decode("utf-8", errors="replace")
 
+def execute_python_update(container_name: str):
+    import os
+    client = docker.from_env()
+    container = client.containers.get(container_name)
+    attrs = container.attrs
+
+    image_ref = attrs['Config']['Image']
+    log_event(f"[{container_name}] Pulling latest image: {image_ref}...", "INFO")
+    try:
+        client.images.pull(image_ref)
+    except Exception as e:
+        log_event(f"[{container_name}] Warning: Failed to pull image: {e}", "WARNING")
+
+    config = attrs['Config']
+    host_config = attrs['HostConfig']
+    network_settings = attrs['NetworkSettings']
+
+    run_kwargs = {
+        "image": image_ref,
+        "name": container_name,
+        "detach": True,
+        "command": config.get('Cmd'),
+        "entrypoint": config.get('Entrypoint'),
+        "environment": config.get('Env'),
+        "hostname": config.get('Hostname'),
+        "user": config.get('User'),
+        "labels": config.get('Labels'),
+        "working_dir": config.get('WorkingDir'),
+        "domainname": config.get('Domainname'),
+    }
+
+    if network_settings and network_settings.get('MacAddress'):
+        run_kwargs["mac_address"] = network_settings.get('MacAddress')
+
+    if host_config:
+        run_kwargs["privileged"] = host_config.get("Privileged")
+        run_kwargs["cap_add"] = host_config.get("CapAdd")
+        run_kwargs["cap_drop"] = host_config.get("CapDrop")
+        run_kwargs["network_mode"] = host_config.get("NetworkMode")
+        run_kwargs["ipc_mode"] = host_config.get("IpcMode")
+        run_kwargs["pid_mode"] = host_config.get("PidMode")
+        run_kwargs["volumes"] = host_config.get("Binds")
+
+        rp = host_config.get("RestartPolicy")
+        if rp and rp.get("Name"):
+            run_kwargs["restart_policy"] = rp
+
+        port_bindings = host_config.get("PortBindings")
+        if port_bindings:
+            ports = {}
+            for c_port, h_binds in port_bindings.items():
+                if h_binds:
+                    bind_list = []
+                    for hb in h_binds:
+                        ip = hb.get("HostIp")
+                        port = hb.get("HostPort")
+                        if ip:
+                            bind_list.append((ip, int(port)) if port else ip)
+                        else:
+                            bind_list.append(int(port) if port else None)
+                    ports[c_port] = bind_list[0] if len(bind_list) == 1 else bind_list
+            run_kwargs["ports"] = ports
+            
+        devices = host_config.get("Devices")
+        if devices:
+            run_kwargs["devices"] = [
+                f"{d['PathOnHost']}:{d['PathInContainer']}:{d['CgroupPermissions']}" 
+                for d in devices if d.get('PathOnHost') and d.get('PathInContainer')
+            ]
+
+    # Remove None values so docker-py uses its defaults
+    run_kwargs = {k: v for k, v in run_kwargs.items() if v is not None}
+
+    log_event(f"[{container_name}] Stopping old container...", "INFO")
+    try:
+        container.stop(timeout=15)
+    except Exception as e:
+        log_event(f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG")
+        
+    log_event(f"[{container_name}] Removing old container...", "INFO")
+    container.remove(force=True)
+
+    log_event(f"[{container_name}] Starting new container with updated image...", "INFO")
+    try:
+        new_c = client.containers.run(**run_kwargs)
+        
+        # Re-attach additional networks
+        if network_settings and "Networks" in network_settings:
+            primary_net = run_kwargs.get("network_mode")
+            for net_name, net_conf in network_settings["Networks"].items():
+                if net_name != primary_net and primary_net not in ["host", "none"]:
+                    try:
+                        net = client.networks.get(net_name)
+                        net.connect(new_c, aliases=net_conf.get("Aliases"))
+                        log_event(f"[{container_name}] Connected to additional network: {net_name}", "DEBUG")
+                    except Exception as e:
+                        log_event(f"[{container_name}] Failed to connect to network {net_name}: {e}", "WARNING")
+
+        return f"Successfully recreated {container_name} via native Python SDK."
+    except Exception as e:
+        log_event(f"[{container_name}] Recreation failed: {e}", "ERROR")
+        raise e
+
+
 def log_event(msg: str, level="INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
@@ -457,11 +561,20 @@ class Monitor:
                 try:
                     inspect = subprocess.run(["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', au_name], capture_output=True, text=True)
                     wdir = inspect.stdout.strip()
+                    fallback_needed = False
                     if wdir:
-                        execute_compose_update(wdir, au_name)
-                        log_event(f"Successfully auto-updated {au_name}", "GOOD")
+                        try:
+                            execute_compose_update(wdir, au_name)
+                            log_event(f"Successfully auto-updated {au_name}", "GOOD")
+                        except Exception as e:
+                            log_event(f"Compose auto-update failed for {au_name}: {e}. Falling back to native SDK update.", "WARNING")
+                            fallback_needed = True
                     else:
-                        log_event(f"Skipping auto-update for {au_name}: no compose working_dir found", "WARNING")
+                        fallback_needed = True
+                        
+                    if fallback_needed:
+                        execute_python_update(au_name)
+                        log_event(f"Successfully auto-updated {au_name} using native Python SDK", "GOOD")
                 except Exception as e:
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 
