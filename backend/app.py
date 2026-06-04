@@ -184,6 +184,7 @@ async def token_auth(request: Request, call_next):
                 return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     return await call_next(request)
 
+
 sse_clients = set()
 
 

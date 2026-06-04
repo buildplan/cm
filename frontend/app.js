@@ -163,7 +163,7 @@ function setupSSE() {
 			if (data.type === "state_changed" || data.type === "docker_event") {
 				refreshDashboard();
 			}
-		} catch (e) { }
+		} catch {}
 	};
 
 	sseSource.onerror = (e) => {
@@ -201,7 +201,6 @@ async function refreshDashboard() {
 			document.getElementById("stat-disk-fs").innerText = stats.disk.fs;
 		}
 		const issueMap = state.container_issues ?? {};
-		const updateCache = state.updates ?? {};
 		pendingUpdates = [];
 		const containers = dockerList
 			.map((c) => {
@@ -259,18 +258,19 @@ async function refreshDashboard() {
                         <button onclick="viewMetrics('${name}')" class="flex-1 bg-gray-900/50 hover:bg-gray-700 text-cyan-400 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Metrics">
                             <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
                         </button>
-                        ${hasUpdate
-						? `
+                        ${
+													hasUpdate
+														? `
                             <button onclick="updateContainer('${name}', this)" class="flex-[2] bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs font-medium px-3 py-2 rounded-lg transition flex justify-center items-center gap-2" title="Update">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                             </button>
                         `
-						: `
+														: `
                             <button onclick="updateContainer('${name}', this)" class="flex-[2] bg-gray-900/50 hover:bg-gray-700 text-gray-400 border border-gray-700 hover:border-gray-500 text-xs font-medium px-3 py-2 rounded-lg transition-all duration-200 flex justify-center items-center gap-2" title="Force Pull & Recreate">
                                 <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                             </button>
                         `
-					}
+												}
                     </div>
                 </div>
             `;
@@ -307,7 +307,7 @@ async function triggerRun(force = false) {
 				: "Check completed successfully",
 			"success",
 		);
-	} catch (e) {
+	} catch {
 		showToast("Check failed to run", "error");
 	}
 	btn.innerHTML = originalContent;
@@ -329,7 +329,7 @@ async function updateContainer(name, btnElement) {
 		const res = await apiFetch(`/api/update/${name}`, { method: "POST" });
 		const data = await res.json();
 		if (!res.ok) {
-			showToast("Update failed: " + (data.detail || res.statusText), "error");
+			showToast(`Update failed: ${data.detail || res.statusText}`, "error");
 		} else if (data.exit_code !== 0) {
 			showToast("Docker Compose failed. Check logs.", "error");
 			console.error(data.output);
@@ -337,7 +337,7 @@ async function updateContainer(name, btnElement) {
 			showToast(`${name} updated successfully!`, "success");
 			await apiFetch("/api/run", { method: "POST" });
 		}
-	} catch (e) {
+	} catch {
 		showToast("Network error during update.", "error");
 	}
 	btnElement.innerHTML = originalContent;
@@ -362,13 +362,13 @@ async function controlContainer(action, name) {
 		const data = await res.json();
 		if (!res.ok || data.exit_code !== 0) {
 			showToast(
-				`Failed to ${action} ${name}: ` + (data.error || data.detail),
+				`Failed to ${action} ${name}: ${data.error || data.detail}`,
 				"error",
 			);
 		} else {
 			showToast(`${name} successfully ${action}ed.`, "success");
 		}
-	} catch (e) {
+	} catch {
 		showToast("Network error executing command.", "error");
 	}
 	refreshDashboard();
@@ -400,7 +400,7 @@ async function updateAll() {
 			} else {
 				failCount++;
 			}
-		} catch (e) {
+		} catch (_e) {
 			failCount++;
 		}
 	}
@@ -453,7 +453,7 @@ async function refreshCurrentLogs() {
 		contentBox.textContent =
 			data.output || "No logs available or command failed.";
 		contentBox.scrollTop = contentBox.scrollHeight;
-	} catch (e) {
+	} catch (_e) {
 		if (!isFollowingLogs) {
 			contentBox.innerText = "Error fetching logs from server.";
 		}
@@ -511,7 +511,7 @@ async function viewMetrics(name) {
 		const res = await apiFetch(`/api/metrics/${name}`);
 		const data = await res.json();
 		renderChart(data);
-	} catch (e) {
+	} catch (_e) {
 		showToast("Failed to load metrics", "error");
 	}
 }
@@ -721,7 +721,7 @@ async function loadConfig() {
 		} else {
 			showToast("Error loading config JSON", "error");
 		}
-	} catch (e) {
+	} catch (_e) {
 		showToast("Failed to load config", "error");
 	}
 }
@@ -735,7 +735,7 @@ async function loadConfigYaml() {
 		} else {
 			document.getElementById("config-editor").value = "# Error loading config";
 		}
-	} catch (e) {
+	} catch (_e) {
 		showToast("Failed to load YAML config", "error");
 	}
 }
@@ -753,26 +753,26 @@ async function saveConfig() {
 
 			baseData.general = baseData.general || {};
 			baseData.general.monitor_interval_minutes =
-				parseInt(document.getElementById("f-schedule").value) || 360;
+				parseInt(document.getElementById("f-schedule").value, 10) || 360;
 			baseData.general.update_check_cache_hours =
-				parseInt(document.getElementById("f-cache").value) || 6;
+				parseInt(document.getElementById("f-cache").value, 10) || 6;
 			baseData.general.lock_timeout_seconds =
-				parseInt(document.getElementById("f-lock").value) || 30;
+				parseInt(document.getElementById("f-lock").value, 10) || 30;
 			baseData.general.log_lines_to_check =
-				parseInt(document.getElementById("f-log-lines").value) || 40;
+				parseInt(document.getElementById("f-log-lines").value, 10) || 40;
 			baseData.general.healthchecks_job_url = document
 				.getElementById("f-hc-url")
 				.value.trim();
 
 			baseData.thresholds = baseData.thresholds || {};
 			baseData.thresholds.cpu_warning =
-				parseInt(document.getElementById("f-t-cpu").value) || 80;
+				parseInt(document.getElementById("f-t-cpu").value, 10) || 80;
 			baseData.thresholds.memory_warning =
-				parseInt(document.getElementById("f-t-mem").value) || 80;
+				parseInt(document.getElementById("f-t-mem").value, 10) || 80;
 			baseData.thresholds.disk_space =
-				parseInt(document.getElementById("f-t-disk").value) || 80;
+				parseInt(document.getElementById("f-t-disk").value, 10) || 80;
 			baseData.thresholds.network_error =
-				parseInt(document.getElementById("f-t-net").value) || 10;
+				parseInt(document.getElementById("f-t-net").value, 10) || 10;
 
 			baseData.auto_update = baseData.auto_update || {};
 			baseData.auto_update.enabled =
@@ -829,12 +829,9 @@ async function saveConfig() {
 		} else {
 			const data = await res.json();
 			statusText.innerText = "";
-			showToast(
-				"Invalid configuration format: " + (data.detail || ""),
-				"error",
-			);
+			showToast(`Invalid configuration format: ${data.detail || ""}`, "error");
 		}
-	} catch (e) {
+	} catch {
 		statusText.innerText = "";
 		showToast("Network error saving config.", "error");
 	}
@@ -854,7 +851,7 @@ async function loadAppLogs() {
 		} else {
 			logBox.textContent = "Failed to load logs.";
 		}
-	} catch (e) {
+	} catch (_e) {
 		logBox.textContent = "Network error loading logs.";
 	}
 }
@@ -877,7 +874,23 @@ async function systemPrune() {
 		} else {
 			showToast("Prune failed. Check logs.", "error");
 		}
-	} catch (e) {
+	} catch {
 		showToast("Network error during prune.", "error");
 	}
 }
+
+// Bind global functions for HTML inline event handlers
+window.login = login;
+window.switchTab = switchTab;
+window.updateAll = updateAll;
+window.triggerRun = triggerRun;
+window.logout = logout;
+window.switchConfigTab = switchConfigTab;
+window.saveConfig = saveConfig;
+window.systemPrune = systemPrune;
+window.closeLogModal = closeLogModal;
+window.closeMetricsModal = closeMetricsModal;
+window.viewLogs = viewLogs;
+window.viewMetrics = viewMetrics;
+window.controlContainer = controlContainer;
+window.updateContainer = updateContainer;
