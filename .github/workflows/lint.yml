@@ -56,6 +56,8 @@ jobs:
         uses: reviewdog/action-actionlint@v1.72.0
       - name: Setup Python
         uses: actions/setup-python@v6.2.0
+        with:
+          python-version: '3.14'
       - name: Lint YAML
         run: |
           pip install yamllint
