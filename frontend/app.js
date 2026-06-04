@@ -462,16 +462,23 @@ function renderChart(data) {
         metricsChartInstance.destroy();
     }
     
-    if (!data || data.length === 0) {
-        return;
+    let labels = [];
+    let cpuData = [];
+    let memData = [];
+
+    if (data && data.length > 0) {
+        labels = data.map(d => {
+            const date = new Date(d.t * 1000);
+            return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        });
+        cpuData = data.map(d => d.cpu);
+        memData = data.map(d => d.mem);
+    } else {
+        // Provide placeholder data so the chart framework still renders empty axes
+        labels = ["No Data Yet"];
+        cpuData = [0];
+        memData = [0];
     }
-    
-    const labels = data.map(d => {
-        const date = new Date(d.t * 1000);
-        return date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    });
-    const cpuData = data.map(d => d.cpu);
-    const memData = data.map(d => d.mem);
 
     metricsChartInstance = new Chart(ctx, {
         type: 'line',
