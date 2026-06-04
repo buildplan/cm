@@ -762,16 +762,26 @@
             Register a passkey (FaceID, TouchID, Security Key) to login securely
             without typing the secret token.
           </p>
-          <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div
+            class="flex flex-col sm:flex-row items-start sm:items-center gap-4"
+          >
             <button
               onclick="registerPasskey()"
               class="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-medium py-2 px-6 rounded-lg transition flex items-center gap-2"
             >
               Register New Passkey
             </button>
-            <label class="flex items-center gap-2 cursor-pointer bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700 hover:bg-gray-700 transition">
-              <input type="checkbox" id="f-disable-token" class="w-4 h-4 text-cyan-500 rounded bg-gray-900 border-gray-700" />
-              <span class="text-sm text-gray-300 font-medium">Disable Password/Token Login</span>
+            <label
+              class="flex items-center gap-2 cursor-pointer bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700 hover:bg-gray-700 transition"
+            >
+              <input
+                type="checkbox"
+                id="f-disable-token"
+                class="w-4 h-4 text-cyan-500 rounded bg-gray-900 border-gray-700"
+              />
+              <span class="text-sm text-gray-300 font-medium"
+                >Disable Password/Token Login</span
+              >
             </label>
           </div>
         </div>
