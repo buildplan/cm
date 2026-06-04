@@ -1,0 +1,62 @@
+name: Lint Checks
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  python:
+    name: Python (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Install dependencies
+        run: pip install ruff
+      - name: Lint with Ruff
+        run: ruff check --output-format=github .
+      - name: Format with Ruff
+        run: ruff format --check .
+
+  frontend:
+    name: Frontend (Biome & Prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Lint & Format JS (Biome)
+        run: npx @biomejs/biome ci frontend/
+      - name: Check HTML Formatting (Prettier)
+        run: npx prettier --check frontend/index.html
+
+  docker:
+    name: Docker (Hadolint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  yaml:
+    name: YAML (Yamllint & Actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Workflows (Actionlint)
+        uses: reviewdog/action-actionlint@v1
+      - name: Setup Python
+        uses: actions/setup-python@v5
+      - name: Lint YAML
+        run: |
+          pip install yamllint
+          yamllint -d '{"extends": "default", "rules": {"line-length": "disable", "document-start": "disable"}}' docker-compose.yml
