@@ -34,3 +34,6 @@ renovate.json
 .antigravitycli/
 ANTIGRAVITY.md
 AGENTS.md
+
+# Testing
+tests/
