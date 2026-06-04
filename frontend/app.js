@@ -1049,3 +1049,5 @@ window.viewLogs = viewLogs;
 window.viewMetrics = viewMetrics;
 window.controlContainer = controlContainer;
 window.updateContainer = updateContainer;
+window.loginWithPasskey = loginWithPasskey;
+window.registerPasskey = registerPasskey;
