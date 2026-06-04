@@ -1,6 +1,7 @@
-import asyncio, json, subprocess, os, secrets
+import asyncio, json, subprocess, os, secrets, time
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -125,16 +126,35 @@ def build_yaml_list(env_val, default_list, indent=4):
         return " " * indent + "# - \"none\""
     return "\n".join([f"{' ' * indent}- \"{item}\"" for item in items])
 
+# --- Rate Limiter ---
+AUTH_MAX_ATTEMPTS = 5
+AUTH_WINDOW_SECONDS = 60
+auth_failures = defaultdict(list)
+
+def is_rate_limited(client_ip: str) -> bool:
+    now = time.time()
+    recent = [ts for ts in auth_failures[client_ip] if now - ts < AUTH_WINDOW_SECONDS]
+    auth_failures[client_ip] = recent
+    return len(recent) >= AUTH_MAX_ATTEMPTS
+
+def record_auth_failure(client_ip: str):
+    auth_failures[client_ip].append(time.time())
+
 # --- Auth Middleware ---
 @app.middleware("http")
 async def token_auth(request: Request, call_next):
     if request.url.path.startswith("/api"):
         if SECRET_TOKEN:
+            client_ip = request.client.host if request.client else "unknown"
+            if is_rate_limited(client_ip):
+                return JSONResponse(status_code=429, content={"error": "Too many failed attempts. Try again later."})
+            
             auth_header = request.headers.get("Authorization", "")
             token = auth_header.removeprefix("Bearer ").strip()
             if not token:
                 token = request.query_params.get("token", "")
             if not token or not secrets.compare_digest(token.encode(), SECRET_TOKEN.encode()):
+                record_auth_failure(client_ip)
                 return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     return await call_next(request)
 
@@ -180,25 +200,26 @@ async def scheduled_run():
 import docker
 
 async def docker_event_listener():
+    loop = asyncio.get_running_loop()
+    def listen_events():
+        while True:
+            try:
+                client = docker.from_env()
+                for event in client.events(decode=True):
+                    if event.get("Type") == "container":
+                        status = event.get("status")
+                        if status in ("start", "stop", "die", "restart", "kill", "pause", "unpause"):
+                            msg = json.dumps({"type": "docker_event", "action": status, "container": event.get("Actor", {}).get("Attributes", {}).get("name")})
+                            for q in list(sse_clients):
+                                loop.call_soon_threadsafe(q.put_nowait, msg)
+            except Exception as e:
+                loop.call_soon_threadsafe(log_event, f"Docker event listener disconnected: {e}. Retrying in 5 seconds...", "WARNING")
+                time.sleep(5)
+                
     try:
-        client = docker.from_env()
-        # Run event listener in a thread to not block the event loop
-        def listen_events():
-            for event in client.events(decode=True):
-                # We only care about container events
-                if event.get("Type") == "container":
-                    status = event.get("status")
-                    if status in ("start", "stop", "die", "restart", "kill", "pause", "unpause"):
-                        try:
-                            loop = asyncio.get_running_loop()
-                        except RuntimeError:
-                            continue
-                        msg = json.dumps({"type": "docker_event", "action": status, "container": event.get("Actor", {}).get("Attributes", {}).get("name")})
-                        for q in list(sse_clients):
-                            loop.call_soon_threadsafe(q.put_nowait, msg)
         await asyncio.to_thread(listen_events)
     except Exception as e:
-        log_event(f"Docker event listener failed: {e}", "ERROR")
+        log_event(f"Docker event listener thread failed: {e}", "ERROR")
 
 async def startup():
     asyncio.create_task(docker_event_listener())
