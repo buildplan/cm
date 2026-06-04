@@ -297,16 +297,24 @@ async def update_container(container_name: str):
         capture_output=True, text=True
     )
     working_dir = inspect.stdout.strip()
-    if not working_dir:
-        log_event(f"Update failed: {container_name} lacks a compose working_dir label", "ERROR")
-        raise HTTPException(400, f"'{container_name}' lacks a compose working_dir label.")
-
-    from backend.monitor import execute_compose_update
-    try:
-        output = await asyncio.to_thread(execute_compose_update, working_dir, container_name)
-    except Exception as e:
-        log_event(f"Update failed for {container_name}: {e}", "ERROR")
-        return {"exit_code": 1, "output": str(e), "error": str(e)}
+    from backend.monitor import execute_compose_update, execute_python_update
+    fallback_needed = False
+    output = ""
+    if working_dir:
+        try:
+            output = await asyncio.to_thread(execute_compose_update, working_dir, container_name)
+        except Exception as e:
+            log_event(f"Compose update failed for {container_name}: {e}. Falling back to native SDK update.", "WARNING")
+            fallback_needed = True
+    else:
+        fallback_needed = True
+        
+    if fallback_needed:
+        try:
+            output = await asyncio.to_thread(execute_python_update, container_name)
+        except Exception as e:
+            log_event(f"Update failed for {container_name}: {e}", "ERROR")
+            return {"exit_code": 1, "output": str(e), "error": str(e)}
 
     log_event(f"Successfully updated {container_name}", "GOOD")
     return {"exit_code": 0, "output": output}
