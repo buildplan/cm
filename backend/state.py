@@ -9,8 +9,13 @@ class StateManager:
         self.db_path = db_path
         self.init_db()
 
+    def _get_conn(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        return conn
+
     def init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS state (
                     key TEXT PRIMARY KEY,
@@ -24,6 +29,20 @@ class StateManager:
                     timestamp INTEGER,
                     cpu_percent REAL,
                     mem_percent REAL
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS webauthn_credentials (
+                    credential_id TEXT PRIMARY KEY,
+                    public_key TEXT,
+                    sign_count INTEGER,
+                    user_id TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    token TEXT PRIMARY KEY,
+                    created_at INTEGER
                 )
             """)
             conn.execute(
@@ -51,13 +70,13 @@ class StateManager:
                         print(f"Error migrating old state: {e}")
 
     def get_all(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM state")
             return {row[0]: json.loads(row[1]) for row in cursor.fetchall()}
 
     def get(self, key, default=None):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM state WHERE key = ?", (key,))
             row = cursor.fetchone()
@@ -66,14 +85,14 @@ class StateManager:
             return default
 
     def set(self, key, value):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)",
                 (key, json.dumps(value)),
             )
 
     def update(self, data: dict):
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             for k, v in data.items():
                 conn.execute(
                     "INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)",
@@ -84,7 +103,7 @@ class StateManager:
         self, container_name: str, cpu_percent: float, mem_percent: float
     ):
         now = int(time.time())
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             conn.execute(
                 """
                 INSERT INTO metrics (container_name, timestamp, cpu_percent, mem_percent)
@@ -98,7 +117,7 @@ class StateManager:
 
     def get_metrics(self, container_name: str, hours: int = 24):
         since = int(time.time()) - (hours * 3600)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
@@ -111,3 +130,49 @@ class StateManager:
             )
             rows = cursor.fetchall()
             return [{"t": r[0], "cpu": r[1], "mem": r[2]} for r in rows]
+
+    def add_webauthn_credential(
+        self, credential_id: str, public_key: str, sign_count: int, user_id: str
+    ):
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO webauthn_credentials (credential_id, public_key, sign_count, user_id) VALUES (?, ?, ?, ?)",
+                (credential_id, public_key, sign_count, user_id),
+            )
+
+    def get_webauthn_credentials(self, user_id: str = "admin"):
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT credential_id, public_key, sign_count FROM webauthn_credentials WHERE user_id = ?",
+                (user_id,),
+            )
+            return [
+                {"id": r[0], "public_key": r[1], "sign_count": r[2]}
+                for r in cursor.fetchall()
+            ]
+
+    def update_webauthn_sign_count(self, credential_id: str, sign_count: int):
+        with self._get_conn() as conn:
+            conn.execute(
+                "UPDATE webauthn_credentials SET sign_count = ? WHERE credential_id = ?",
+                (sign_count, credential_id),
+            )
+
+    def create_auth_session(self, token: str):
+        now = int(time.time())
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO auth_sessions (token, created_at) VALUES (?, ?)",
+                (token, now),
+            )
+
+    def is_valid_auth_session(self, token: str, max_age_hours: int = 24) -> bool:
+        min_created = int(time.time()) - (max_age_hours * 3600)
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM auth_sessions WHERE token = ? AND created_at >= ?",
+                (token, min_created),
+            )
+            return cursor.fetchone() is not None

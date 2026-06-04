@@ -69,18 +69,51 @@
           Container Monitor
         </h2>
       </div>
-      <input
-        type="password"
-        id="token-input"
-        placeholder="Enter Secret Token"
-        class="w-full p-3 bg-gray-900/80 border border-gray-600 rounded-xl mb-4 text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none transition"
-      />
       <button
-        onclick="login()"
-        class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-cyan-900/20"
+        id="btn-login-passkey"
+        onclick="loginWithPasskey()"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-indigo-900/20 mb-4 hidden"
       >
-        Login to Dashboard
+        <div class="flex items-center justify-center gap-2">
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+            ></path>
+          </svg>
+          Login with Passkey
+        </div>
       </button>
+
+      <div id="divider-or" class="flex items-center gap-4 mb-4 hidden">
+        <hr class="flex-1 border-gray-700" />
+        <span class="text-xs text-gray-500 uppercase tracking-wider font-bold"
+          >Or Fallback</span
+        >
+        <hr class="flex-1 border-gray-700" />
+      </div>
+
+      <div id="section-login-token" class="hidden">
+        <input
+          type="password"
+          id="token-input"
+          placeholder="Enter Secret Token"
+          class="w-full p-3 bg-gray-900/80 border border-gray-600 rounded-xl mb-4 text-white focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none transition"
+        />
+        <button
+          onclick="login()"
+          class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-cyan-900/20"
+        >
+          Login with Token
+        </button>
+      </div>
     </div>
 
     <div id="app-screen" class="w-full max-w-7xl hidden flex-1 flex-col">
@@ -704,6 +737,53 @@
           >
             💾 Save Configuration
           </button>
+        </div>
+
+        <div class="mt-10 pt-8 border-t border-gray-800">
+          <div class="flex items-center gap-3 mb-2">
+            <svg
+              class="w-6 h-6 text-indigo-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+              ></path>
+            </svg>
+            <h3 class="text-lg font-bold text-white">
+              Security: WebAuthn / Passkeys
+            </h3>
+          </div>
+          <p class="text-sm text-gray-400 mb-5">
+            Register a passkey (FaceID, TouchID, Security Key) to login securely
+            without typing the secret token.
+          </p>
+          <div
+            class="flex flex-col sm:flex-row items-start sm:items-center gap-4"
+          >
+            <button
+              onclick="registerPasskey()"
+              class="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-medium py-2 px-6 rounded-lg transition flex items-center gap-2"
+            >
+              Register New Passkey
+            </button>
+            <label
+              class="flex items-center gap-2 cursor-pointer bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700 hover:bg-gray-700 transition"
+            >
+              <input
+                type="checkbox"
+                id="f-disable-token"
+                class="w-4 h-4 text-cyan-500 rounded bg-gray-900 border-gray-700"
+              />
+              <span class="text-sm text-gray-300 font-medium"
+                >Disable Password/Token Login</span
+              >
+            </label>
+          </div>
         </div>
 
         <div class="mt-10 pt-8 border-t border-gray-800">

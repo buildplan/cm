@@ -22,6 +22,7 @@ class AuthConfig(BaseModel):
     docker_username: str = ""
     docker_password: str = ""
     docker_config_path: str = "~/.docker/config.json"
+    disable_token_auth: bool = False
 
 
 class ThresholdsConfig(BaseModel):
