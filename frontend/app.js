@@ -203,15 +203,7 @@ async function refreshDashboard() {
                 }
             }
 
-            const cImage = c.Image || "";
-            const updateObj = Object.values(updateCache).find(e => {
-                if (!e || !e.image_ref) return false;
-                const refBase = e.image_ref.split(':')[0]; // Remove tag
-                const cImageBase = cImage.split(':')[0];
-                return e.image_ref.includes(cImageBase) || cImage.includes(refBase);
-            });
-
-            const hasUpdate = updateObj && updateObj.data && updateObj.data.exit_code === 100;
+            const hasUpdate = issues.some(iss => iss.startsWith("Updates: Update available"));
             if (hasUpdate) pendingUpdates.push(name);
 
             return `

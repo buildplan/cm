@@ -13,8 +13,45 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 CONFIG_F = DATA_DIR / "config.yml"
 STATE_DB = DATA_DIR / "monitor_state.db"
 LOG_F = DATA_DIR / "container-monitor.log"
-
 import subprocess
+
+def execute_compose_update(working_dir: str, container_name: str):
+    import os
+    client = docker.from_env()
+
+    if Path(working_dir).is_dir():
+        # Fast path: directory is mounted locally in this container
+        pull_res = subprocess.run(["docker", "compose", "pull"], cwd=working_dir, capture_output=True, text=True)
+        if pull_res.returncode != 0: raise Exception(f"Pull failed: {pull_res.stderr}")
+        up_res = subprocess.run(["docker", "compose", "up", "-d", "--force-recreate"], cwd=working_dir, capture_output=True, text=True)
+        if up_res.returncode != 0: raise Exception(f"Up failed: {up_res.stderr}")
+        return pull_res.stdout + "\n" + up_res.stdout
+
+    # Auto-mount path: execute via ephemeral sibling container
+    my_id = os.environ.get("HOSTNAME")
+    env = {}
+    if "DOCKER_HOST" in os.environ:
+        env["DOCKER_HOST"] = os.environ["DOCKER_HOST"]
+
+    try:
+        client.images.get("docker:cli")
+    except docker.errors.ImageNotFound:
+        client.images.pull("docker:cli")
+
+    log_event(f"[{container_name}] Path {working_dir} not mounted locally. Using ephemeral container to auto-mount from host.", "INFO")
+
+    logs = client.containers.run(
+        image="docker:cli",
+        entrypoint="sh",
+        command=["-c", "docker compose pull && docker compose up -d --force-recreate"],
+        volumes={working_dir: {'bind': working_dir, 'mode': 'ro'}},
+        working_dir=working_dir,
+        environment=env,
+        network_mode=f"container:{my_id}" if my_id else None,
+        remove=True
+    )
+    return logs.decode("utf-8", errors="replace")
+
 def log_event(msg: str, level="INFO"):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
@@ -82,6 +119,61 @@ def get_registry_tags(image_name):
     except Exception:
         pass
     return []
+
+def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
+    if ":" in image_ref:
+        image_name, tag = image_ref.rsplit(":", 1)
+    else:
+        image_name = image_ref
+        tag = "latest"
+    registry = "registry-1.docker.io"
+    repo = image_name
+    if "/" in image_name:
+        parts = image_name.split("/", 1)
+        if "." in parts[0] or ":" in parts[0] or parts[0] == "localhost":
+            registry = parts[0]
+            repo = parts[1]
+    else:
+        repo = f"library/{image_name}"
+    url = f"https://{registry}/v2/"
+    digests = set()
+    try:
+        r = httpx.get(url, timeout=10)
+        token = ""
+        if r.status_code == 401:
+            auth = r.headers.get("Www-Authenticate", "")
+            if auth.lower().startswith("bearer"):
+                realm_m = re.search(r'realm="([^"]+)"', auth)
+                service_m = re.search(r'service="([^"]+)"', auth)
+                if realm_m:
+                    realm = realm_m.group(1)
+                    service = service_m.group(1) if service_m else ""
+                    auth_url = f"{realm}?service={service}&scope=repository:{repo}:pull"
+                    tr = httpx.get(auth_url, timeout=10)
+                    if tr.status_code == 200:
+                        token = tr.json().get("token") or tr.json().get("access_token")
+        headers = {
+            "Accept": "application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
+        }
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        manifest_url = f"https://{registry}/v2/{repo}/manifests/{tag}"
+        resp = httpx.get(manifest_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            manifest_list_digest = resp.headers.get("Docker-Content-Digest")
+            if manifest_list_digest:
+                digests.add(manifest_list_digest)
+            content_type = resp.headers.get("Content-Type", "")
+            if "manifest.list" in content_type or "image.index" in content_type:
+                data = resp.json()
+                for m in data.get("manifests", []):
+                    plat = m.get("platform", {})
+                    if plat.get("architecture") == architecture and plat.get("os") == os_name:
+                        if m.get("digest"):
+                            digests.add(m.get("digest"))
+    except Exception:
+        pass
+    return list(digests)
 
 def parse_version(tag):
     m = re.search(r'^v?(\d+)\.(\d+)(?:\.(\d+))?', tag)
@@ -306,14 +398,31 @@ class Monitor:
                                 }
                         else:
                             log_event(f"[{name}] Checking remote digest for {image_ref} (Strategy: digest)", "DEBUG")
-                            reg_data = self.client.images.get_registry_data(image_ref)
-                            local_digest = None
+                            local_arch = c.image.attrs.get("Architecture", "amd64")
+                            local_os = c.image.attrs.get("Os", "linux")
+
+                            local_digests = []
                             repo_digests = c.image.attrs.get("RepoDigests", [])
                             if repo_digests:
-                                local_digest = repo_digests[0].split("@")[-1]
+                                local_digests = [rd.split("@")[-1] for rd in repo_digests]
 
-                            remote_digest = reg_data.id
-                            if local_digest and remote_digest and local_digest != remote_digest:
+                            try:
+                                reg_data = self.client.images.get_registry_data(image_ref)
+                                remote_digest = reg_data.id
+                            except Exception:
+                                remote_digest = None
+
+                            remote_digests = []
+                            if remote_digest:
+                                remote_digests.append(remote_digest)
+
+                            http_digests = get_remote_digests(image_ref, local_arch, local_os)
+                            if http_digests:
+                                remote_digests.extend(http_digests)
+
+                            remote_digests = list(set(remote_digests))
+
+                            if local_digests and remote_digests and not any(rd in local_digests for rd in remote_digests):
                                 msg = "Update available"
                                 log_event(f"[{name}] UPDATE FOUND: New digest available for {image_ref}", "INFO")
                                 self.state["updates"][cache_key] = {
@@ -348,10 +457,11 @@ class Monitor:
                 try:
                     inspect = subprocess.run(["docker", "inspect", "--format", '{{index .Config.Labels "com.docker.compose.project.working_dir"}}', au_name], capture_output=True, text=True)
                     wdir = inspect.stdout.strip()
-                    if wdir and Path(wdir).is_dir():
-                        subprocess.run(["docker", "compose", "pull"], cwd=wdir, capture_output=True)
-                        subprocess.run(["docker", "compose", "up", "-d", "--force-recreate"], cwd=wdir, capture_output=True)
+                    if wdir:
+                        execute_compose_update(wdir, au_name)
                         log_event(f"Successfully auto-updated {au_name}", "GOOD")
+                    else:
+                        log_event(f"Skipping auto-update for {au_name}: no compose working_dir found", "WARNING")
                 except Exception as e:
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 
