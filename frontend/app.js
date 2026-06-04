@@ -207,7 +207,7 @@ async function refreshDashboard() {
             if (hasUpdate) pendingUpdates.push(name);
 
             return `
-                <div class="p-5 rounded-2xl border ${borderColor} bg-gray-800/30 backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:bg-gray-800/60 flex flex-col justify-between group">
+                <div class="p-5 rounded-2xl border ${borderColor} bg-gray-800/20 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/50 hover:bg-gray-800/50 flex flex-col justify-between group shadow-lg shadow-black/20">
                     <div>
                         <div class="flex justify-between items-start mb-3">
                             <h3 class="font-bold text-lg text-white truncate pr-2 group-hover:text-cyan-400 transition-colors" title="${name}">${name}</h3>
