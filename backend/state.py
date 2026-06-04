@@ -26,6 +26,20 @@ class StateManager:
                     mem_percent REAL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS webauthn_credentials (
+                    credential_id TEXT PRIMARY KEY,
+                    public_key TEXT,
+                    sign_count INTEGER,
+                    user_id TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    token TEXT PRIMARY KEY,
+                    created_at INTEGER
+                )
+            """)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_metrics_container ON metrics(container_name)"
             )
@@ -111,3 +125,49 @@ class StateManager:
             )
             rows = cursor.fetchall()
             return [{"t": r[0], "cpu": r[1], "mem": r[2]} for r in rows]
+
+    def add_webauthn_credential(
+        self, credential_id: str, public_key: str, sign_count: int, user_id: str
+    ):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO webauthn_credentials (credential_id, public_key, sign_count, user_id) VALUES (?, ?, ?, ?)",
+                (credential_id, public_key, sign_count, user_id),
+            )
+
+    def get_webauthn_credentials(self, user_id: str = "admin"):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT credential_id, public_key, sign_count FROM webauthn_credentials WHERE user_id = ?",
+                (user_id,),
+            )
+            return [
+                {"id": r[0], "public_key": r[1], "sign_count": r[2]}
+                for r in cursor.fetchall()
+            ]
+
+    def update_webauthn_sign_count(self, credential_id: str, sign_count: int):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE webauthn_credentials SET sign_count = ? WHERE credential_id = ?",
+                (sign_count, credential_id),
+            )
+
+    def create_auth_session(self, token: str):
+        now = int(time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO auth_sessions (token, created_at) VALUES (?, ?)",
+                (token, now),
+            )
+
+    def is_valid_auth_session(self, token: str, max_age_hours: int = 24) -> bool:
+        min_created = int(time.time()) - (max_age_hours * 3600)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM auth_sessions WHERE token = ? AND created_at >= ?",
+                (token, min_created),
+            )
+            return cursor.fetchone() is not None

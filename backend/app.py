@@ -15,6 +15,18 @@ from apscheduler.triggers.interval import IntervalTrigger
 from pydantic import BaseModel
 import yaml
 from contextlib import asynccontextmanager
+import base64
+from webauthn import (
+    generate_registration_options,
+    verify_registration_response,
+    generate_authentication_options,
+    verify_authentication_response,
+)
+from webauthn.helpers.structs import (
+    AuthenticatorSelectionCriteria,
+    UserVerificationRequirement,
+)
+from webauthn.helpers.options_to_json import options_to_json
 
 import docker
 from backend.monitor import Monitor, get_container_logs
@@ -164,8 +176,25 @@ def record_auth_failure(client_ip: str):
 # --- Auth Middleware ---
 @app.middleware("http")
 async def token_auth(request: Request, call_next):
-    if request.url.path.startswith("/api"):
-        if SECRET_TOKEN:
+    if (
+        request.url.path.startswith("/api")
+        and not request.url.path.startswith("/api/auth/login")
+        and not request.url.path.startswith("/api/auth/status")
+    ):
+        try:
+            mgr = StateManager(STATE_DB)
+            has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
+        except Exception:
+            has_passkeys = False
+
+        try:
+            with open(CONFIG_F, "r") as f:
+                cfg = yaml.safe_load(f)
+            disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
+        except Exception:
+            disable_token_auth = False
+
+        if SECRET_TOKEN or has_passkeys:
             client_ip = request.client.host if request.client else "unknown"
             if is_rate_limited(client_ip):
                 return JSONResponse(
@@ -177,9 +206,21 @@ async def token_auth(request: Request, call_next):
             token = auth_header.removeprefix("Bearer ").strip()
             if not token:
                 token = request.query_params.get("token", "")
-            if not token or not secrets.compare_digest(
-                token.encode(), SECRET_TOKEN.encode()
+
+            is_valid = False
+            # Check Token Login
+            if (
+                not disable_token_auth
+                and SECRET_TOKEN
+                and token
+                and secrets.compare_digest(token.encode(), SECRET_TOKEN.encode())
             ):
+                is_valid = True
+            # Check Passkey Session
+            elif token and has_passkeys and mgr.is_valid_auth_session(token):
+                is_valid = True
+
+            if not is_valid:
                 record_auth_failure(client_ip)
                 return JSONResponse(status_code=401, content={"error": "Unauthorized"})
     return await call_next(request)
@@ -435,10 +476,153 @@ async def startup():
 
 
 # --- API Endpoints ---
+@app.get("/api/auth/status")
+async def auth_status():
+    try:
+        mgr = StateManager(STATE_DB)
+        has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
+    except Exception:
+        has_passkeys = False
+
+    try:
+        with open(CONFIG_F, "r") as f:
+            cfg = yaml.safe_load(f)
+        disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
+    except Exception:
+        disable_token_auth = False
+
+    token_enabled = not disable_token_auth and bool(SECRET_TOKEN)
+    auth_required = bool(SECRET_TOKEN) or has_passkeys
+
+    return {
+        "has_passkeys": has_passkeys,
+        "token_auth_enabled": token_enabled,
+        "auth_required": auth_required,
+    }
+
+
 @app.get("/api/state")
 async def get_state():
     mgr = StateManager(STATE_DB)
     return mgr.get_all()
+
+
+webauthn_challenges = {}
+
+
+@app.get("/api/auth/register/generate-options")
+async def register_generate_options(request: Request):
+    user_id = "admin"
+    mgr = StateManager(STATE_DB)
+    credentials = mgr.get_webauthn_credentials(user_id)
+    exclude_credentials = [
+        {"id": base64.b64decode(c["id"]), "type": "public-key"} for c in credentials
+    ]
+
+    rp_id = request.url.hostname or "localhost"
+    rp_name = "Container Monitor"
+
+    options = generate_registration_options(
+        rp_id=rp_id,
+        rp_name=rp_name,
+        user_id=user_id.encode("utf-8"),
+        user_name=user_id,
+        exclude_credentials=exclude_credentials,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            user_verification=UserVerificationRequirement.PREFERRED
+        ),
+    )
+    webauthn_challenges[user_id] = options.challenge
+    return json.loads(options_to_json(options))
+
+
+@app.post("/api/auth/register/verify")
+async def register_verify(request: Request):
+    user_id = "admin"
+    body = await request.json()
+    challenge = webauthn_challenges.get(user_id)
+    if not challenge:
+        raise HTTPException(status_code=400, detail="No challenge found")
+
+    rp_id = request.url.hostname or "localhost"
+    origin = request.headers.get("origin")
+    if not origin:
+        host_header = request.headers.get("host", request.url.netloc)
+        origin = f"{request.url.scheme}://{host_header}"
+
+    try:
+        verification = verify_registration_response(
+            credential=body,
+            expected_challenge=challenge,
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    mgr = StateManager(STATE_DB)
+    mgr.add_webauthn_credential(
+        credential_id=base64.b64encode(verification.credential_id).decode("utf-8"),
+        public_key=base64.b64encode(verification.credential_public_key).decode("utf-8"),
+        sign_count=verification.sign_count,
+        user_id=user_id,
+    )
+    webauthn_challenges.pop(user_id, None)
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/login/generate-options")
+async def login_generate_options(request: Request):
+    rp_id = request.url.hostname or "localhost"
+
+    options = generate_authentication_options(
+        rp_id=rp_id,
+        user_verification=UserVerificationRequirement.PREFERRED,
+    )
+    webauthn_challenges["login"] = options.challenge
+    return json.loads(options_to_json(options))
+
+
+@app.post("/api/auth/login/verify")
+async def login_verify(request: Request):
+    body = await request.json()
+    challenge = webauthn_challenges.get("login")
+    if not challenge:
+        raise HTTPException(status_code=400, detail="No challenge found")
+
+    rp_id = request.url.hostname or "localhost"
+    origin = request.headers.get("origin")
+    if not origin:
+        host_header = request.headers.get("host", request.url.netloc)
+        origin = f"{request.url.scheme}://{host_header}"
+    mgr = StateManager(STATE_DB)
+    cred_id_str = body.get("id")
+    if not cred_id_str:
+        raise HTTPException(status_code=400, detail="Invalid credential")
+
+    creds = mgr.get_webauthn_credentials("admin")
+    cred_match = next((c for c in creds if c["id"] == cred_id_str), None)
+    if not cred_match:
+        raise HTTPException(status_code=400, detail="Credential not found")
+
+    try:
+        verification = verify_authentication_response(
+            credential=body,
+            expected_challenge=challenge,
+            expected_rp_id=rp_id,
+            expected_origin=origin,
+            credential_public_key=base64.b64decode(cred_match["public_key"]),
+            credential_current_sign_count=cred_match["sign_count"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    mgr.update_webauthn_sign_count(cred_match["id"], verification.new_sign_count)
+    webauthn_challenges.pop("login", None)
+
+    session_token = secrets.token_hex(32)
+    mgr.create_auth_session(session_token)
+    return {"token": session_token}
 
 
 @app.get("/api/metrics/{container_name:path}")

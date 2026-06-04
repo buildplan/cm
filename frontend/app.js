@@ -18,7 +18,36 @@ function init() {
 	if (localStorage.getItem(TOKEN_KEY)) {
 		showApp();
 	} else {
-		document.getElementById("auth-screen").classList.remove("hidden");
+		fetch("/api/auth/status")
+			.then((r) => r.json())
+			.then((status) => {
+				if (!status.auth_required) {
+					showApp();
+				} else {
+					document.getElementById("auth-screen").classList.remove("hidden");
+					const passkeyBtn = document.getElementById("btn-login-passkey");
+					const tokenSection = document.getElementById("section-login-token");
+					const orDivider = document.getElementById("divider-or");
+
+					if (status.has_passkeys) passkeyBtn.classList.remove("hidden");
+					else passkeyBtn.classList.add("hidden");
+
+					if (status.token_auth_enabled) {
+						tokenSection.classList.remove("hidden");
+						if (status.has_passkeys) orDivider.classList.remove("hidden");
+						else orDivider.classList.add("hidden");
+					} else {
+						tokenSection.classList.add("hidden");
+						orDivider.classList.add("hidden");
+					}
+				}
+			})
+			.catch(() => {
+				document.getElementById("auth-screen").classList.remove("hidden");
+				document
+					.getElementById("section-login-token")
+					.classList.remove("hidden");
+			});
 	}
 }
 
@@ -32,6 +61,126 @@ function login() {
 function logout() {
 	localStorage.removeItem(TOKEN_KEY);
 	location.reload();
+}
+
+// --- WebAuthn Helpers ---
+function base64urlToBuffer(base64url) {
+	const padding = "=".repeat((4 - (base64url.length % 4)) % 4);
+	const base64 = (base64url + padding).replace(/-/g, "+").replace(/_/g, "/");
+	const rawData = window.atob(base64);
+	const outputArray = new Uint8Array(rawData.length);
+	for (let i = 0; i < rawData.length; ++i) {
+		outputArray[i] = rawData.charCodeAt(i);
+	}
+	return outputArray.buffer;
+}
+
+function bufferToBase64url(buffer) {
+	const bytes = new Uint8Array(buffer);
+	let str = "";
+	for (const charCode of bytes) {
+		str += String.fromCharCode(charCode);
+	}
+	const base64String = window.btoa(str);
+	return base64String.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+async function loginWithPasskey() {
+	try {
+		const res = await fetch("/api/auth/login/generate-options");
+		const options = await res.json();
+
+		options.challenge = base64urlToBuffer(options.challenge);
+		if (options.allowCredentials) {
+			options.allowCredentials.forEach((cred) => {
+				cred.id = base64urlToBuffer(cred.id);
+			});
+		}
+
+		const assertion = await navigator.credentials.get({ publicKey: options });
+
+		const verifyRes = await fetch("/api/auth/login/verify", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				id: assertion.id,
+				rawId: bufferToBase64url(assertion.rawId),
+				type: assertion.type,
+				response: {
+					authenticatorData: bufferToBase64url(
+						assertion.response.authenticatorData,
+					),
+					clientDataJSON: bufferToBase64url(assertion.response.clientDataJSON),
+					signature: bufferToBase64url(assertion.response.signature),
+					userHandle: assertion.response.userHandle
+						? bufferToBase64url(assertion.response.userHandle)
+						: null,
+				},
+			}),
+		});
+
+		const verifyData = await verifyRes.json();
+		if (verifyRes.ok && verifyData.token) {
+			localStorage.setItem(TOKEN_KEY, verifyData.token);
+			document.getElementById("auth-screen").classList.add("hidden");
+			showApp();
+			showToast("Login successful via Passkey");
+		} else {
+			showToast(verifyData.detail || "Verification failed", "error");
+		}
+	} catch (e) {
+		console.error(e);
+		showToast("Passkey login cancelled or failed.", "error");
+	}
+}
+
+async function registerPasskey() {
+	try {
+		showToast("Starting passkey registration...", "info");
+		const res = await apiFetch("/api/auth/register/generate-options");
+		if (!res.ok) {
+			showToast("Failed to fetch registration options", "error");
+			return;
+		}
+		const options = await res.json();
+
+		options.challenge = base64urlToBuffer(options.challenge);
+		options.user.id = base64urlToBuffer(options.user.id);
+		if (options.excludeCredentials) {
+			options.excludeCredentials.forEach((cred) => {
+				cred.id = base64urlToBuffer(cred.id);
+			});
+		}
+
+		const credential = await navigator.credentials.create({
+			publicKey: options,
+		});
+
+		const verifyRes = await apiFetch("/api/auth/register/verify", {
+			method: "POST",
+			body: JSON.stringify({
+				id: credential.id,
+				rawId: bufferToBase64url(credential.rawId),
+				type: credential.type,
+				response: {
+					attestationObject: bufferToBase64url(
+						credential.response.attestationObject,
+					),
+					clientDataJSON: bufferToBase64url(credential.response.clientDataJSON),
+				},
+			}),
+		});
+
+		if (verifyRes.ok) {
+			showToast("Passkey registered successfully!", "success");
+		} else {
+			const err = await verifyRes.json();
+			showToast(err.detail || "Failed to verify registration", "error");
+		}
+	} catch (e) {
+		console.error(e);
+		showToast("Passkey registration cancelled or failed.", "error");
+	}
 }
 
 function isNewerVersion(localVer, upstreamVer) {
@@ -718,6 +867,8 @@ async function loadConfig() {
 				data.notifications?.generic?.webhook_url || "";
 			document.getElementById("f-hc-url").value =
 				data.general?.healthchecks_job_url || "";
+			document.getElementById("f-disable-token").checked =
+				data.auth?.disable_token_auth === true;
 		} else {
 			showToast("Error loading config JSON", "error");
 		}
@@ -792,6 +943,10 @@ async function saveConfig() {
 				.value.split(",")
 				.map((s) => s.trim())
 				.filter(Boolean);
+
+			baseData.auth = baseData.auth || {};
+			baseData.auth.disable_token_auth =
+				document.getElementById("f-disable-token").checked;
 
 			baseData.notifications = baseData.notifications || {};
 			baseData.notifications.channel =

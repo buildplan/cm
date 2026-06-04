@@ -13,7 +13,7 @@ RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # hadolint ignore=DL3013,DL3059
-RUN pip3 install --no-cache-dir --compile fastapi uvicorn apscheduler pyyaml docker httpx
+RUN pip3 install --no-cache-dir --compile fastapi uvicorn apscheduler pyyaml docker httpx webauthn
 
 # hadolint ignore=DL3059
 RUN pip3 uninstall -y pip setuptools \
