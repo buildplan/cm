@@ -49,6 +49,9 @@ def execute_compose_update(working_dir: str, container_name: str):
         environment=env,
         network_mode=f"container:{my_id}" if my_id else None,
         remove=True
+    )
+    return logs.decode("utf-8", errors="replace")
+
 def execute_python_update(container_name: str):
     import os
     client = docker.from_env()
@@ -123,9 +126,13 @@ def execute_python_update(container_name: str):
     run_kwargs = {k: v for k, v in run_kwargs.items() if v is not None}
 
     log_event(f"[{container_name}] Stopping old container...", "INFO")
-    container.stop(timeout=15)
+    try:
+        container.stop(timeout=15)
+    except Exception as e:
+        log_event(f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG")
+        
     log_event(f"[{container_name}] Removing old container...", "INFO")
-    container.remove()
+    container.remove(force=True)
 
     log_event(f"[{container_name}] Starting new container with updated image...", "INFO")
     try:
