@@ -195,6 +195,9 @@ async def token_auth(request: Request, call_next):
         except Exception:
             disable_token_auth = False
 
+        if disable_token_auth and not has_passkeys:
+            disable_token_auth = False
+
         if SECRET_TOKEN or has_passkeys:
             client_ip = request.client.host if request.client else "unknown"
             if is_rate_limited(client_ip):
@@ -492,6 +495,9 @@ async def auth_status():
     except Exception:
         disable_token_auth = False
 
+    if disable_token_auth and not has_passkeys:
+        disable_token_auth = False
+
     token_enabled = not disable_token_auth and bool(SECRET_TOKEN)
     auth_required = bool(SECRET_TOKEN) or has_passkeys
 
@@ -607,7 +613,9 @@ async def login_verify(request: Request):
         raise HTTPException(status_code=400, detail="Invalid credential encoding")
 
     creds = mgr.get_webauthn_credentials("admin")
-    cred_match = next((c for c in creds if c["id"] == cred_id_bytes), None)
+    cred_match = next(
+        (c for c in creds if base64.b64decode(c["id"]) == cred_id_bytes), None
+    )
     if not cred_match:
         raise HTTPException(status_code=400, detail="Credential not found")
 
