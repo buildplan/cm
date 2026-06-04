@@ -148,7 +148,7 @@ async def token_auth(request: Request, call_next):
             client_ip = request.client.host if request.client else "unknown"
             if is_rate_limited(client_ip):
                 return JSONResponse(status_code=429, content={"error": "Too many failed attempts. Try again later."})
-            
+
             auth_header = request.headers.get("Authorization", "")
             token = auth_header.removeprefix("Bearer ").strip()
             if not token:
@@ -215,7 +215,7 @@ async def docker_event_listener():
             except Exception as e:
                 loop.call_soon_threadsafe(log_event, f"Docker event listener disconnected: {e}. Retrying in 5 seconds...", "WARNING")
                 time.sleep(5)
-                
+
     try:
         await asyncio.to_thread(listen_events)
     except Exception as e:
@@ -334,7 +334,7 @@ async def update_container(container_name: str):
             fallback_needed = True
     else:
         fallback_needed = True
-        
+
     if fallback_needed:
         try:
             output = await asyncio.to_thread(execute_python_update, container_name)

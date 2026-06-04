@@ -74,7 +74,7 @@ class StateManager:
                 INSERT INTO metrics (container_name, timestamp, cpu_percent, mem_percent)
                 VALUES (?, ?, ?, ?)
             ''', (container_name, now, round(cpu_percent, 2), round(mem_percent, 2)))
-            
+
             # Keep only last 24 hours (86400 seconds)
             conn.execute('DELETE FROM metrics WHERE timestamp < ?', (now - 86400,))
 
@@ -83,9 +83,9 @@ class StateManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT timestamp, cpu_percent, mem_percent 
-                FROM metrics 
-                WHERE container_name = ? AND timestamp >= ? 
+                SELECT timestamp, cpu_percent, mem_percent
+                FROM metrics
+                WHERE container_name = ? AND timestamp >= ?
                 ORDER BY timestamp ASC
             ''', (container_name, since))
             rows = cursor.fetchall()

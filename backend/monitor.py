@@ -98,7 +98,7 @@ def execute_python_update(container_name: str):
         run_kwargs["dns"] = host_config.get("Dns")
         run_kwargs["sysctls"] = host_config.get("Sysctls")
         run_kwargs["tmpfs"] = host_config.get("Tmpfs")
-        
+
         extra_hosts = host_config.get("ExtraHosts")
         if extra_hosts:
             if isinstance(extra_hosts, list):
@@ -125,11 +125,11 @@ def execute_python_update(container_name: str):
                             bind_list.append(int(port) if port else None)
                     ports[c_port] = bind_list[0] if len(bind_list) == 1 else bind_list
             run_kwargs["ports"] = ports
-            
+
         devices = host_config.get("Devices")
         if devices:
             run_kwargs["devices"] = [
-                f"{d['PathOnHost']}:{d['PathInContainer']}:{d['CgroupPermissions']}" 
+                f"{d['PathOnHost']}:{d['PathInContainer']}:{d['CgroupPermissions']}"
                 for d in devices if d.get('PathOnHost') and d.get('PathInContainer')
             ]
 
@@ -141,14 +141,14 @@ def execute_python_update(container_name: str):
         container.stop(timeout=15)
     except Exception as e:
         log_event(f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG")
-        
+
     log_event(f"[{container_name}] Removing old container...", "INFO")
     container.remove(force=True)
 
     log_event(f"[{container_name}] Starting new container with updated image...", "INFO")
     try:
         new_c = client.containers.run(**run_kwargs)
-        
+
         # Re-attach additional networks
         if network_settings and "Networks" in network_settings:
             primary_net = run_kwargs.get("network_mode")
@@ -406,7 +406,7 @@ class Monitor:
                 mem_usage = stats["memory_stats"].get("usage", 0)
                 mem_limit = stats["memory_stats"].get("limit", 1)
                 mem_percent = (mem_usage / mem_limit) * 100.0
-                
+
                 self.state_mgr.record_metrics(name, cpu_percent, mem_percent)
 
                 cpu_warn = int(self.config.get("thresholds", {}).get("cpu_warning", 80))
@@ -584,7 +584,7 @@ class Monitor:
                             fallback_needed = True
                     else:
                         fallback_needed = True
-                        
+
                     if fallback_needed:
                         execute_python_update(au_name)
                         log_event(f"Successfully auto-updated {au_name} using native Python SDK", "GOOD")
