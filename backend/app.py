@@ -27,6 +27,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 from webauthn.helpers.options_to_json import options_to_json
+from webauthn.helpers import base64url_to_bytes
 
 import docker
 from backend.monitor import Monitor, get_container_logs
@@ -600,8 +601,13 @@ async def login_verify(request: Request):
     if not cred_id_str:
         raise HTTPException(status_code=400, detail="Invalid credential")
 
+    try:
+        cred_id_bytes = base64url_to_bytes(cred_id_str)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid credential encoding")
+
     creds = mgr.get_webauthn_credentials("admin")
-    cred_match = next((c for c in creds if c["id"] == cred_id_str), None)
+    cred_match = next((c for c in creds if c["id"] == cred_id_bytes), None)
     if not cred_match:
         raise HTTPException(status_code=400, detail="Credential not found")
 
