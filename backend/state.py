@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import time
 from pathlib import Path
 
 class StateManager:
@@ -16,6 +17,17 @@ class StateManager:
                     value TEXT
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    container_name TEXT,
+                    timestamp INTEGER,
+                    cpu_percent REAL,
+                    mem_percent REAL
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_metrics_container ON metrics(container_name)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_metrics_time ON metrics(timestamp)')
 
             # Migrate from old JSON state if exists and db is empty
             cursor = conn.cursor()
@@ -54,3 +66,27 @@ class StateManager:
         with sqlite3.connect(self.db_path) as conn:
             for k, v in data.items():
                 conn.execute('INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)', (k, json.dumps(v)))
+
+    def record_metrics(self, container_name: str, cpu_percent: float, mem_percent: float):
+        now = int(time.time())
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('''
+                INSERT INTO metrics (container_name, timestamp, cpu_percent, mem_percent)
+                VALUES (?, ?, ?, ?)
+            ''', (container_name, now, round(cpu_percent, 2), round(mem_percent, 2)))
+            
+            # Keep only last 24 hours (86400 seconds)
+            conn.execute('DELETE FROM metrics WHERE timestamp < ?', (now - 86400,))
+
+    def get_metrics(self, container_name: str, hours: int = 24):
+        since = int(time.time()) - (hours * 3600)
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT timestamp, cpu_percent, mem_percent 
+                FROM metrics 
+                WHERE container_name = ? AND timestamp >= ? 
+                ORDER BY timestamp ASC
+            ''', (container_name, since))
+            rows = cursor.fetchall()
+            return [{"t": r[0], "cpu": r[1], "mem": r[2]} for r in rows]

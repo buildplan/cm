@@ -395,6 +395,8 @@ class Monitor:
                 mem_usage = stats["memory_stats"].get("usage", 0)
                 mem_limit = stats["memory_stats"].get("limit", 1)
                 mem_percent = (mem_usage / mem_limit) * 100.0
+                
+                self.state_mgr.record_metrics(name, cpu_percent, mem_percent)
 
                 cpu_warn = int(self.config.get("thresholds", {}).get("cpu_warning", 80))
                 mem_warn = int(self.config.get("thresholds", {}).get("memory_warning", 80))
