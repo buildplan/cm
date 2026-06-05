@@ -315,15 +315,15 @@ function setupSSE() {
 				showToast("Monitoring check completed", "success");
 				const btnForce = document.getElementById("force-check-btn");
 				const btnRun = document.getElementById("run-check-btn");
-				if (btnForce) {
+				if (btnForce?.dataset.originalHtml) {
 					btnForce.disabled = false;
-					btnForce.innerHTML =
-						'<svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check';
+					btnForce.innerHTML = btnForce.dataset.originalHtml;
+					delete btnForce.dataset.originalHtml;
 				}
-				if (btnRun) {
+				if (btnRun?.dataset.originalHtml) {
 					btnRun.disabled = false;
-					btnRun.innerHTML =
-						'<svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Run Check';
+					btnRun.innerHTML = btnRun.dataset.originalHtml;
+					delete btnRun.dataset.originalHtml;
 				}
 				refreshDashboard();
 			}
@@ -459,8 +459,10 @@ async function triggerRun(force = false) {
 	const btnId = force ? "force-check-btn" : "run-check-btn";
 	const btn = document.getElementById(btnId);
 	if (!btn) return;
-	const originalContent = btn.innerHTML;
-	btn.innerHTML = `<svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> ${force ? "Forcing..." : "Running..."}`;
+	if (!btn.dataset.originalHtml) {
+		btn.dataset.originalHtml = btn.innerHTML;
+	}
+	btn.innerHTML = `<svg class="animate-spin w-4 h-4 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span class="whitespace-nowrap">${force ? "Forcing..." : "Running..."}</span>`;
 	btn.disabled = true;
 	try {
 		const endpoint = force ? "/api/run?force=true" : "/api/run";
@@ -468,8 +470,9 @@ async function triggerRun(force = false) {
 		showToast("Monitoring check started in background. Please wait...", "info");
 	} catch {
 		showToast("Check failed to start", "error");
-		btn.innerHTML = originalContent;
+		btn.innerHTML = btn.dataset.originalHtml;
 		btn.disabled = false;
+		delete btn.dataset.originalHtml;
 	}
 	refreshDashboard();
 }

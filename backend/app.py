@@ -700,6 +700,8 @@ async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
             monitor.run()
         except Exception as e:
             log_event(f"Manual monitor check failed: {e}", "ERROR")
+        finally:
+            broadcast_event("check_completed", {})
 
     background_tasks.add_task(asyncio.to_thread, run_monitor)
     return {"exit_code": 0, "output": "Monitoring started in background"}
