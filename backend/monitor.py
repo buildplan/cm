@@ -56,11 +56,15 @@ def execute_compose_update(working_dir: str, container_name: str):
         "INFO",
     )
 
+    volumes = {working_dir: {"bind": working_dir, "mode": "ro"}}
+    if "DOCKER_HOST" not in os.environ:
+        volumes["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
+
     logs = client.containers.run(
         image="docker:cli",
         entrypoint="sh",
         command=["-c", "docker compose pull && docker compose up -d --force-recreate"],
-        volumes={working_dir: {"bind": working_dir, "mode": "ro"}},
+        volumes=volumes,
         working_dir=working_dir,
         environment=env,
         network_mode=f"container:{my_id}" if my_id else None,
@@ -100,6 +104,22 @@ def execute_python_update(container_name: str):
         "domainname": config.get("Domainname"),
     }
 
+    if "Tty" in config:
+        run_kwargs["tty"] = config.get("Tty")
+    if "OpenStdin" in config:
+        run_kwargs["stdin_open"] = config.get("OpenStdin")
+    if "Healthcheck" in config and config["Healthcheck"]:
+        hc = config["Healthcheck"]
+        if hc.get("Test"):
+            hc_dict = {
+                "test": hc.get("Test"),
+                "interval": hc.get("Interval"),
+                "timeout": hc.get("Timeout"),
+                "retries": hc.get("Retries"),
+                "start_period": hc.get("StartPeriod"),
+            }
+            run_kwargs["healthcheck"] = {k: v for k, v in hc_dict.items() if v is not None}
+
     if network_settings and network_settings.get("MacAddress"):
         run_kwargs["mac_address"] = network_settings.get("MacAddress")
 
@@ -115,6 +135,58 @@ def execute_python_update(container_name: str):
         run_kwargs["dns"] = host_config.get("Dns")
         run_kwargs["sysctls"] = host_config.get("Sysctls")
         run_kwargs["tmpfs"] = host_config.get("Tmpfs")
+
+        # Map resource limits safely (exclude zero values which cause daemon errors)
+        mem = host_config.get("Memory")
+        if mem:
+            run_kwargs["mem_limit"] = mem
+        mem_swap = host_config.get("MemorySwap")
+        if mem_swap and mem_swap > 0:
+            run_kwargs["memswap_limit"] = mem_swap
+        cpu_period = host_config.get("CpuPeriod")
+        if cpu_period:
+            run_kwargs["cpu_period"] = cpu_period
+        cpu_quota = host_config.get("CpuQuota")
+        if cpu_quota:
+            run_kwargs["cpu_quota"] = cpu_quota
+        cpu_shares = host_config.get("CpuShares")
+        if cpu_shares:
+            run_kwargs["cpu_shares"] = cpu_shares
+        run_kwargs["cpuset_cpus"] = host_config.get("CpusetCpus")
+        run_kwargs["cpuset_mems"] = host_config.get("CpusetMems")
+        nano_cpus = host_config.get("NanoCpus")
+        if nano_cpus:
+            run_kwargs["nano_cpus"] = nano_cpus
+
+        # Map log config (convert to docker-py LogConfig structure)
+        log_config = host_config.get("LogConfig")
+        if log_config and log_config.get("Type"):
+            from docker.types import LogConfig
+
+            run_kwargs["log_config"] = LogConfig(
+                type=log_config.get("Type"), config=log_config.get("Config")
+            )
+
+        # Map ulimits
+        ulimits = host_config.get("Ulimits")
+        if ulimits:
+            from docker.types import Ulimit
+
+            run_kwargs["ulimits"] = [
+                Ulimit(
+                    name=u.get("Name") or u.get("name"),
+                    soft=u.get("Soft") or u.get("soft"),
+                    hard=u.get("Hard") or u.get("hard"),
+                )
+                for u in ulimits
+            ]
+
+        shm = host_config.get("ShmSize")
+        if shm:
+            run_kwargs["shm_size"] = shm
+        run_kwargs["init"] = host_config.get("Init")
+        run_kwargs["read_only"] = host_config.get("ReadonlyRootfs")
+        run_kwargs["auto_remove"] = host_config.get("AutoRemove")
 
         extra_hosts = host_config.get("ExtraHosts")
         if extra_hosts:
