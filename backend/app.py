@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -39,8 +39,14 @@ class ConfigUpdate(BaseModel):
     yaml_text: str
 
 
+main_loop = None
+_check_running = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global main_loop
+    main_loop = asyncio.get_running_loop()
     await startup()
     yield
 
@@ -108,7 +114,7 @@ thresholds:
   network_error: __NET_WARN__
 
 host_system:
-  disk_check_filesystem: "/"
+  disk_check_filesystem: "/hostfs"
 
 notifications:
   channel: "__NOTIFY_CHANNEL__"
@@ -190,14 +196,20 @@ async def token_auth(request: Request, call_next):
         and not request.url.path.startswith("/api/auth/status")
     ):
         try:
-            mgr = StateManager(STATE_DB)
-            has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
+            mgr = await asyncio.to_thread(StateManager, STATE_DB)
+            has_passkeys = (
+                len(await asyncio.to_thread(mgr.get_webauthn_credentials, "admin")) > 0
+            )
         except Exception:
             has_passkeys = False
 
         try:
-            with open(CONFIG_F, "r") as f:
-                cfg = yaml.safe_load(f)
+
+            def load_cfg():
+                with open(CONFIG_F, "r") as f:
+                    return yaml.safe_load(f)
+
+            cfg = await asyncio.to_thread(load_cfg)
             disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
         except Exception:
             disable_token_auth = False
@@ -242,12 +254,9 @@ sse_clients = set()
 
 def broadcast_event(event_type: str, data: dict):
     msg = json.dumps({"type": event_type, "data": data})
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
-    for q in list(sse_clients):
-        loop.call_soon_threadsafe(q.put_nowait, msg)
+    if main_loop and not main_loop.is_closed():
+        for q in list(sse_clients):
+            main_loop.call_soon_threadsafe(q.put_nowait, msg)
 
 
 async def event_generator(q: asyncio.Queue):
@@ -326,15 +335,18 @@ async def startup():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_F.exists():
         try:
-            result = subprocess.run(
-                ["docker", "ps", "-a", "--format", "{{.Names}}"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            discovered_containers = [
-                name.strip() for name in result.stdout.splitlines() if name.strip()
-            ]
+
+            def fetch_names():
+                import docker
+
+                client = docker.from_env()
+                return [
+                    c.name.strip()
+                    for c in client.containers.list(all=True)
+                    if c.name.strip()
+                ]
+
+            discovered_containers = await asyncio.to_thread(fetch_names)
         except Exception as e:
             print(f"Failed to auto-discover containers: {e}")
             discovered_containers = []
@@ -488,7 +500,7 @@ async def startup():
 
 # --- API Endpoints ---
 @app.get("/api/auth/status")
-async def auth_status():
+def auth_status():
     try:
         mgr = StateManager(STATE_DB)
         has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
@@ -516,7 +528,7 @@ async def auth_status():
 
 
 @app.get("/api/state")
-async def get_state():
+def get_state():
     mgr = StateManager(STATE_DB)
     return mgr.get_all()
 
@@ -654,21 +666,59 @@ async def get_container_metrics(container_name: str, hours: int = 24):
 
 @app.get("/api/containers")
 async def get_containers():
-    result = subprocess.run(
-        ["docker", "ps", "-a", "--format", "{{json .}}"], capture_output=True, text=True
-    )
-    return [json.loads(line) for line in result.stdout.strip().splitlines() if line]
+    try:
+
+        def fetch():
+            import docker
+
+            client = docker.from_env()
+            res = []
+            for c in client.containers.list(all=True):
+                health = c.attrs.get("State", {}).get("Health", {}).get("Status", "")
+                status_str = f"{c.status} ({health})" if health else c.status
+                res.append(
+                    {
+                        "Names": c.name,
+                        "State": c.status,
+                        "Status": status_str,
+                    }
+                )
+            return res
+
+        return await asyncio.to_thread(fetch)
+    except Exception as e:
+        log_event(f"Error fetching containers: {e}", "ERROR")
+        return []
 
 
 @app.post("/api/run")
-async def trigger_run(force: bool = False):
+async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
+    global _check_running
     log_event(f"Manual monitor check triggered (Force cache bypass: {force})", "API")
-    try:
-        monitor = Monitor(force=force, on_update=broadcast_event)
-        await asyncio.to_thread(monitor.run)
-        return {"exit_code": 0, "output": "Monitoring completed successfully"}
-    except Exception as e:
-        return {"exit_code": 1, "output": str(e)}
+
+    if _check_running:
+        return {"exit_code": 0, "output": "Check already running"}
+
+    _check_running = True
+
+    def run_monitor():
+        global _check_running
+        try:
+            monitor = Monitor(force=force, on_update=broadcast_event)
+            monitor.run()
+        except Exception as e:
+            log_event(f"Manual monitor check failed: {e}", "ERROR")
+        finally:
+            _check_running = False
+            broadcast_event("check_completed", {})
+
+    background_tasks.add_task(asyncio.to_thread, run_monitor)
+    return {"exit_code": 0, "output": "Monitoring started in background"}
+
+
+@app.get("/api/check-status")
+def get_check_status():
+    return {"running": _check_running}
 
 
 @app.post("/api/update/{container_name:path}")
@@ -760,7 +810,7 @@ async def control_container(action: str, container_name: str):
 
 
 @app.get("/api/logs")
-async def get_monitor_log(lines: int = 200):
+def get_monitor_log(lines: int = 200):
     if not LOG_F.exists():
         return {"lines": []}
     return {"lines": LOG_F.read_text().splitlines()[-lines:]}
@@ -833,27 +883,42 @@ async def update_config_json(request: Request):
 
 
 @app.get("/api/container-logs/{container_name:path}")
-async def container_logs(container_name: str, filter: str = ""):
+def container_logs(container_name: str, filter: str = ""):
     out = get_container_logs(container_name, filter)
     return {"output": out}
 
 
 @app.get("/api/host-stats")
-async def get_host_stats():
-    fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
+def get_host_stats():
+    fs = "/hostfs"
+    try:
+        with open(CONFIG_F, "r") as f:
+            cfg = yaml.safe_load(f)
+            fs = cfg.get("host_system", {}).get("disk_check_filesystem", "/hostfs")
+    except Exception:
+        fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
+
     disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
     try:
-        disk_cmd = subprocess.run(["df", "-Ph", fs], capture_output=True, text=True)
-        disk_lines = disk_cmd.stdout.strip().split("\n")
-        if len(disk_lines) > 1:
-            parts = disk_lines[1].split()
-            if len(parts) >= 5:
-                disk_info = {
-                    "size": parts[1],
-                    "used": parts[2],
-                    "percent": parts[4],
-                    "fs": fs,
-                }
+        import shutil
+
+        total, used, free = shutil.disk_usage(fs)
+        if total > 0:
+            percent = int((used / total) * 100)
+
+            def format_size(b):
+                if b >= 1024**4:
+                    return f"{b / 1024**4:.1f}T".replace(".0T", "T")
+                elif b >= 1024**3:
+                    return f"{b / 1024**3:.1f}G".replace(".0G", "G")
+                elif b >= 1024**2:
+                    return f"{b / 1024**2:.1f}M".replace(".0M", "M")
+                else:
+                    return f"{b / 1024:.1f}K".replace(".0K", "K")
+
+            disk_info["size"] = format_size(total)
+            disk_info["used"] = format_size(used)
+            disk_info["percent"] = f"{percent}%"
     except Exception:
         pass
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
@@ -866,11 +931,18 @@ async def get_host_stats():
                 total = int(parts[1])
                 used = int(parts[2])
                 percent = int((used / total) * 100) if total > 0 else 0
-                mem_info = {
-                    "total": f"{total}MB",
-                    "used": f"{used}MB",
-                    "percent": f"{percent}%",
-                }
+                if total >= 1024:
+                    mem_info = {
+                        "total": f"{total / 1024:.1f}GB".replace(".0GB", "GB"),
+                        "used": f"{used / 1024:.1f}GB".replace(".0GB", "GB"),
+                        "percent": f"{percent}%",
+                    }
+                else:
+                    mem_info = {
+                        "total": f"{total}MB",
+                        "used": f"{used}MB",
+                        "percent": f"{percent}%",
+                    }
     except Exception:
         pass
     cpu_load = "0.00"
@@ -883,7 +955,7 @@ async def get_host_stats():
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     return {"status": "healthy"}
 
 

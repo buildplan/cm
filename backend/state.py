@@ -5,9 +5,13 @@ from pathlib import Path
 
 
 class StateManager:
+    _db_initialized = False
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
-        self.init_db()
+        if not StateManager._db_initialized:
+            self.init_db()
+            StateManager._db_initialized = True
 
     def _get_conn(self):
         conn = sqlite3.connect(self.db_path)

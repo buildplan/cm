@@ -2,6 +2,13 @@
 node_modules/
 npm-debug.log
 backend/__pycache__/
+.ruff_cache/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+tests/
+tests_manual/
 
 # Persistent Data
 data/
@@ -17,6 +24,10 @@ docker-compose-*
 Thumbs.db
 *.bak
 
+# Antigravity
 .antigravitycli/
 ANTIGRAVITY.md
 AGENTS.md
+
+# VSCode
+.vscode/

@@ -474,6 +474,8 @@ class Monitor:
             log_event(f"Failed to save state: {e}", "ERROR")
 
     def run(self):
+        if self.on_update:
+            self.on_update("check_started", {})
         log_event("Starting monitor cycle...", "INFO")
         if not self.client:
             log_event(
@@ -892,6 +894,9 @@ class Monitor:
 
         if issues_found:
             self.send_notifications(issues_found)
+
+        if self.on_update:
+            self.on_update("check_completed", {})
 
     def send_notifications(self, issues):
         channel = self.config.get("notifications", {}).get("channel", "none")
