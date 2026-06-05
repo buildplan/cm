@@ -39,8 +39,13 @@ class ConfigUpdate(BaseModel):
     yaml_text: str
 
 
+main_loop = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global main_loop
+    main_loop = asyncio.get_running_loop()
     await startup()
     yield
 
@@ -248,12 +253,9 @@ sse_clients = set()
 
 def broadcast_event(event_type: str, data: dict):
     msg = json.dumps({"type": event_type, "data": data})
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return
-    for q in list(sse_clients):
-        loop.call_soon_threadsafe(q.put_nowait, msg)
+    if main_loop and not main_loop.is_closed():
+        for q in list(sse_clients):
+            main_loop.call_soon_threadsafe(q.put_nowait, msg)
 
 
 async def event_generator(q: asyncio.Queue):
