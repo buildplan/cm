@@ -315,15 +315,15 @@ function setupSSE() {
 				showToast("Monitoring check completed", "success");
 				const btnForce = document.getElementById("force-check-btn");
 				const btnRun = document.getElementById("run-check-btn");
-				if (btnForce?.dataset.originalHtml) {
+				if (btnForce?.dataset?.originalHtml) {
 					btnForce.disabled = false;
 					btnForce.innerHTML = btnForce.dataset.originalHtml;
-					delete btnForce.dataset.originalHtml;
+					btnForce.removeAttribute("data-original-html");
 				}
-				if (btnRun?.dataset.originalHtml) {
+				if (btnRun?.dataset?.originalHtml) {
 					btnRun.disabled = false;
 					btnRun.innerHTML = btnRun.dataset.originalHtml;
-					delete btnRun.dataset.originalHtml;
+					btnRun.removeAttribute("data-original-html");
 				}
 				refreshDashboard();
 			}
@@ -470,9 +470,11 @@ async function triggerRun(force = false) {
 		showToast("Monitoring check started in background. Please wait...", "info");
 	} catch {
 		showToast("Check failed to start", "error");
-		btn.innerHTML = btn.dataset.originalHtml;
+		if (btn.dataset?.originalHtml) {
+			btn.innerHTML = btn.dataset.originalHtml;
+			btn.removeAttribute("data-original-html");
+		}
 		btn.disabled = false;
-		delete btn.dataset.originalHtml;
 	}
 	refreshDashboard();
 }
