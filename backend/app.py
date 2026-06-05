@@ -332,15 +332,18 @@ async def startup():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_F.exists():
         try:
-            result = subprocess.run(
-                ["docker", "ps", "-a", "--format", "{{.Names}}"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            discovered_containers = [
-                name.strip() for name in result.stdout.splitlines() if name.strip()
-            ]
+
+            def fetch_names():
+                import docker
+
+                client = docker.from_env()
+                return [
+                    c.name.strip()
+                    for c in client.containers.list(all=True)
+                    if c.name.strip()
+                ]
+
+            discovered_containers = await asyncio.to_thread(fetch_names)
         except Exception as e:
             print(f"Failed to auto-discover containers: {e}")
             discovered_containers = []
@@ -660,10 +663,29 @@ async def get_container_metrics(container_name: str, hours: int = 24):
 
 @app.get("/api/containers")
 async def get_containers():
-    result = subprocess.run(
-        ["docker", "ps", "-a", "--format", "{{json .}}"], capture_output=True, text=True
-    )
-    return [json.loads(line) for line in result.stdout.strip().splitlines() if line]
+    try:
+
+        def fetch():
+            import docker
+
+            client = docker.from_env()
+            res = []
+            for c in client.containers.list(all=True):
+                health = c.attrs.get("State", {}).get("Health", {}).get("Status", "")
+                status_str = f"{c.status} ({health})" if health else c.status
+                res.append(
+                    {
+                        "Names": c.name,
+                        "State": c.status,
+                        "Status": status_str,
+                    }
+                )
+            return res
+
+        return await asyncio.to_thread(fetch)
+    except Exception as e:
+        log_event(f"Error fetching containers: {e}", "ERROR")
+        return []
 
 
 @app.post("/api/run")
