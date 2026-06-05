@@ -190,14 +190,20 @@ async def token_auth(request: Request, call_next):
         and not request.url.path.startswith("/api/auth/status")
     ):
         try:
-            mgr = StateManager(STATE_DB)
-            has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
+            mgr = await asyncio.to_thread(StateManager, STATE_DB)
+            has_passkeys = (
+                len(await asyncio.to_thread(mgr.get_webauthn_credentials, "admin")) > 0
+            )
         except Exception:
             has_passkeys = False
 
         try:
-            with open(CONFIG_F, "r") as f:
-                cfg = yaml.safe_load(f)
+
+            def load_cfg():
+                with open(CONFIG_F, "r") as f:
+                    return yaml.safe_load(f)
+
+            cfg = await asyncio.to_thread(load_cfg)
             disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
         except Exception:
             disable_token_auth = False
@@ -488,7 +494,7 @@ async def startup():
 
 # --- API Endpoints ---
 @app.get("/api/auth/status")
-async def auth_status():
+def auth_status():
     try:
         mgr = StateManager(STATE_DB)
         has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
@@ -516,7 +522,7 @@ async def auth_status():
 
 
 @app.get("/api/state")
-async def get_state():
+def get_state():
     mgr = StateManager(STATE_DB)
     return mgr.get_all()
 
@@ -760,7 +766,7 @@ async def control_container(action: str, container_name: str):
 
 
 @app.get("/api/logs")
-async def get_monitor_log(lines: int = 200):
+def get_monitor_log(lines: int = 200):
     if not LOG_F.exists():
         return {"lines": []}
     return {"lines": LOG_F.read_text().splitlines()[-lines:]}
@@ -833,13 +839,13 @@ async def update_config_json(request: Request):
 
 
 @app.get("/api/container-logs/{container_name:path}")
-async def container_logs(container_name: str, filter: str = ""):
+def container_logs(container_name: str, filter: str = ""):
     out = get_container_logs(container_name, filter)
     return {"output": out}
 
 
 @app.get("/api/host-stats")
-async def get_host_stats():
+def get_host_stats():
     fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
     disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
     try:
@@ -883,7 +889,7 @@ async def get_host_stats():
 
 
 @app.get("/health")
-def health_check():
+async def health_check():
     return {"status": "healthy"}
 
 
