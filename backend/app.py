@@ -882,14 +882,25 @@ def get_host_stats():
 
     disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
     try:
-        df_out = subprocess.run(["df", "-h", fs], capture_output=True, text=True)
-        lines = df_out.stdout.strip().splitlines()
-        if len(lines) > 1:
-            parts = lines[-1].split()
-            if len(parts) >= 5:
-                disk_info["size"] = parts[1]
-                disk_info["used"] = parts[2]
-                disk_info["percent"] = parts[4]
+        import shutil
+
+        total, used, free = shutil.disk_usage(fs)
+        if total > 0:
+            percent = int((used / total) * 100)
+
+            def format_size(b):
+                if b >= 1024**4:
+                    return f"{b / 1024**4:.1f}T".replace(".0T", "T")
+                elif b >= 1024**3:
+                    return f"{b / 1024**3:.1f}G".replace(".0G", "G")
+                elif b >= 1024**2:
+                    return f"{b / 1024**2:.1f}M".replace(".0M", "M")
+                else:
+                    return f"{b / 1024:.1f}K".replace(".0K", "K")
+
+            disk_info["size"] = format_size(total)
+            disk_info["used"] = format_size(used)
+            disk_info["percent"] = f"{percent}%"
     except Exception:
         pass
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
@@ -902,11 +913,18 @@ def get_host_stats():
                 total = int(parts[1])
                 used = int(parts[2])
                 percent = int((used / total) * 100) if total > 0 else 0
-                mem_info = {
-                    "total": f"{total}MB",
-                    "used": f"{used}MB",
-                    "percent": f"{percent}%",
-                }
+                if total >= 1024:
+                    mem_info = {
+                        "total": f"{total / 1024:.1f}GB".replace(".0GB", "GB"),
+                        "used": f"{used / 1024:.1f}GB".replace(".0GB", "GB"),
+                        "percent": f"{percent}%",
+                    }
+                else:
+                    mem_info = {
+                        "total": f"{total}MB",
+                        "used": f"{used}MB",
+                        "percent": f"{percent}%",
+                    }
     except Exception:
         pass
     cpu_load = "0.00"
