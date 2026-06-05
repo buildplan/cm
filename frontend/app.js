@@ -311,6 +311,21 @@ function setupSSE() {
 			const data = JSON.parse(event.data);
 			if (data.type === "state_changed" || data.type === "docker_event") {
 				refreshDashboard();
+			} else if (data.type === "check_completed") {
+				showToast("Monitoring check completed", "success");
+				const btnForce = document.getElementById("force-check-btn");
+				const btnRun = document.getElementById("run-check-btn");
+				if (btnForce) {
+					btnForce.disabled = false;
+					btnForce.innerHTML =
+						'<svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Force Check';
+				}
+				if (btnRun) {
+					btnRun.disabled = false;
+					btnRun.innerHTML =
+						'<svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> Run Check';
+				}
+				refreshDashboard();
 			}
 		} catch {}
 	};
@@ -450,17 +465,12 @@ async function triggerRun(force = false) {
 	try {
 		const endpoint = force ? "/api/run?force=true" : "/api/run";
 		await apiFetch(endpoint, { method: "POST" });
-		showToast(
-			force
-				? "Forced check completed (Cache bypassed)"
-				: "Check completed successfully",
-			"success",
-		);
+		showToast("Monitoring check started in background. Please wait...", "info");
 	} catch {
-		showToast("Check failed to run", "error");
+		showToast("Check failed to start", "error");
+		btn.innerHTML = originalContent;
+		btn.disabled = false;
 	}
-	btn.innerHTML = originalContent;
-	btn.disabled = false;
 	refreshDashboard();
 }
 

@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -108,7 +108,7 @@ thresholds:
   network_error: __NET_WARN__
 
 host_system:
-  disk_check_filesystem: "/"
+  disk_check_filesystem: "/hostfs"
 
 notifications:
   channel: "__NOTIFY_CHANNEL__"
@@ -689,14 +689,18 @@ async def get_containers():
 
 
 @app.post("/api/run")
-async def trigger_run(force: bool = False):
+async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
     log_event(f"Manual monitor check triggered (Force cache bypass: {force})", "API")
-    try:
-        monitor = Monitor(force=force, on_update=broadcast_event)
-        await asyncio.to_thread(monitor.run)
-        return {"exit_code": 0, "output": "Monitoring completed successfully"}
-    except Exception as e:
-        return {"exit_code": 1, "output": str(e)}
+
+    def run_monitor():
+        try:
+            monitor = Monitor(force=force, on_update=broadcast_event)
+            monitor.run()
+        except Exception as e:
+            log_event(f"Manual monitor check failed: {e}", "ERROR")
+
+    background_tasks.add_task(asyncio.to_thread, run_monitor)
+    return {"exit_code": 0, "output": "Monitoring started in background"}
 
 
 @app.post("/api/update/{container_name:path}")
@@ -868,20 +872,24 @@ def container_logs(container_name: str, filter: str = ""):
 
 @app.get("/api/host-stats")
 def get_host_stats():
-    fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
+    fs = "/hostfs"
+    try:
+        with open(CONFIG_F, "r") as f:
+            cfg = yaml.safe_load(f)
+            fs = cfg.get("host_system", {}).get("disk_check_filesystem", "/hostfs")
+    except Exception:
+        fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
+
     disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
     try:
-        disk_cmd = subprocess.run(["df", "-Ph", fs], capture_output=True, text=True)
-        disk_lines = disk_cmd.stdout.strip().split("\n")
-        if len(disk_lines) > 1:
-            parts = disk_lines[1].split()
+        df_out = subprocess.run(["df", "-h", fs], capture_output=True, text=True)
+        lines = df_out.stdout.strip().splitlines()
+        if len(lines) > 1:
+            parts = lines[-1].split()
             if len(parts) >= 5:
-                disk_info = {
-                    "size": parts[1],
-                    "used": parts[2],
-                    "percent": parts[4],
-                    "fs": fs,
-                }
+                disk_info["size"] = parts[1]
+                disk_info["used"] = parts[2]
+                disk_info["percent"] = parts[4]
     except Exception:
         pass
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
