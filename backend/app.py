@@ -40,6 +40,7 @@ class ConfigUpdate(BaseModel):
 
 
 main_loop = None
+_check_running = False
 
 
 @asynccontextmanager
@@ -692,19 +693,32 @@ async def get_containers():
 
 @app.post("/api/run")
 async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
+    global _check_running
     log_event(f"Manual monitor check triggered (Force cache bypass: {force})", "API")
 
+    if _check_running:
+        return {"exit_code": 0, "output": "Check already running"}
+
+    _check_running = True
+
     def run_monitor():
+        global _check_running
         try:
             monitor = Monitor(force=force, on_update=broadcast_event)
             monitor.run()
         except Exception as e:
             log_event(f"Manual monitor check failed: {e}", "ERROR")
         finally:
+            _check_running = False
             broadcast_event("check_completed", {})
 
     background_tasks.add_task(asyncio.to_thread, run_monitor)
     return {"exit_code": 0, "output": "Monitoring started in background"}
+
+
+@app.get("/api/check-status")
+def get_check_status():
+    return {"running": _check_running}
 
 
 @app.post("/api/update/{container_name:path}")
