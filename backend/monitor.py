@@ -118,7 +118,9 @@ def execute_python_update(container_name: str):
                 "retries": hc.get("Retries"),
                 "start_period": hc.get("StartPeriod"),
             }
-            run_kwargs["healthcheck"] = {k: v for k, v in hc_dict.items() if v is not None}
+            run_kwargs["healthcheck"] = {
+                k: v for k, v in hc_dict.items() if v is not None
+            }
 
     if network_settings and network_settings.get("MacAddress"):
         run_kwargs["mac_address"] = network_settings.get("MacAddress")
