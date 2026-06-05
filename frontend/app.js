@@ -249,6 +249,9 @@ function showToast(message, type = "success") {
 	} else if (type === "info") {
 		styleClasses = "bg-blue-500/10 border-blue-500/50 text-blue-400";
 		icon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+	} else if (type === "warning") {
+		styleClasses = "bg-amber-500/10 border-amber-500/50 text-amber-400";
+		icon = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`;
 	}
 	toast.className = `flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-md shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 pointer-events-auto ${styleClasses}`;
 	toast.innerHTML = `${icon} <span class="text-sm font-medium">${message}</span>`;
@@ -466,10 +469,52 @@ async function triggerRun(force = false) {
 	btn.disabled = true;
 	try {
 		const endpoint = force ? "/api/run?force=true" : "/api/run";
-		await apiFetch(endpoint, { method: "POST" });
+		const res = await apiFetch(endpoint, { method: "POST" });
+		if (!res.ok) {
+			const errData = await res.json().catch(() => ({}));
+			showToast(
+				`Check failed to start: ${errData.error || res.statusText}`,
+				"error",
+			);
+			if (btn.dataset?.originalHtml) {
+				btn.innerHTML = btn.dataset.originalHtml;
+				btn.removeAttribute("data-original-html");
+			}
+			btn.disabled = false;
+			return;
+		}
+
 		showToast("Monitoring check started in background. Please wait...", "info");
-	} catch {
-		showToast("Check failed to start", "error");
+
+		// Poll the backend until the check completes
+		const checkInterval = setInterval(async () => {
+			try {
+				const statusRes = await apiFetch("/api/check-status");
+				if (statusRes.ok) {
+					const statusData = await statusRes.json();
+					if (!statusData.running) {
+						clearInterval(checkInterval);
+						// Only show success toast and restore if the SSE handler hasn't already done it
+						if (btn.dataset?.originalHtml) {
+							showToast(
+								force
+									? "Forced check completed (Cache bypassed)"
+									: "Check completed successfully",
+								"success",
+							);
+							btn.innerHTML = btn.dataset.originalHtml;
+							btn.removeAttribute("data-original-html");
+							btn.disabled = false;
+							refreshDashboard();
+						}
+					}
+				}
+			} catch (_err) {
+				// Ignore transient network errors during polling
+			}
+		}, 2000);
+	} catch (_e) {
+		showToast("Check failed due to network error", "error");
 		if (btn.dataset?.originalHtml) {
 			btn.innerHTML = btn.dataset.originalHtml;
 			btn.removeAttribute("data-original-html");
