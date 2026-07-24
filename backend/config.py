@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict
 
 
 class GeneralConfig(BaseModel):
@@ -13,9 +12,9 @@ class GeneralConfig(BaseModel):
 
 
 class LogsConfig(BaseModel):
-    error_patterns: List[str] = ["Exception", "SEVERE", "Traceback"]
+    error_patterns: list[str] = ["Exception", "SEVERE", "Traceback"]
     log_clean_pattern: str = "^[^ ]+[\\s]+"
-    ignore_patterns: Dict[str, List[str]] = {}
+    ignore_patterns: dict[str, list[str]] = {}
 
 
 class AuthConfig(BaseModel):
@@ -62,21 +61,21 @@ class NotificationsConfig(BaseModel):
 
 
 class ExcludeConfig(BaseModel):
-    updates: List[str] = []
+    updates: list[str] = []
 
 
 class ContainersConfig(BaseModel):
-    monitor_defaults: List[str] = []
-    release_urls: Dict[str, str] = {}
-    update_strategies: Dict[str, str] = {}
+    monitor_defaults: list[str] = []
+    release_urls: dict[str, str] = {}
+    update_strategies: dict[str, str] = {}
     exclude: ExcludeConfig = Field(default_factory=ExcludeConfig)
 
 
 class AutoUpdateConfig(BaseModel):
     enabled: bool = False
-    tags: List[str] = []
-    include: List[str] = []
-    exclude: List[str] = []
+    tags: list[str] = []
+    include: list[str] = []
+    exclude: list[str] = []
 
 
 class AppConfig(BaseModel):

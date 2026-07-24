@@ -1,5 +1,5 @@
-import sqlite3
 import json
+import sqlite3
 import time
 from pathlib import Path
 
@@ -70,7 +70,7 @@ class StateManager:
                                     "INSERT INTO state (key, value) VALUES (?, ?)",
                                     (k, json.dumps(v)),
                                 )
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         print(f"Error migrating old state: {e}")
 
     def get_all(self):
