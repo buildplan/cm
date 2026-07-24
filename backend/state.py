@@ -70,7 +70,7 @@ class StateManager:
                                     "INSERT INTO state (key, value) VALUES (?, ?)",
                                     (k, json.dumps(v)),
                                 )
-                    except Exception as e:  # noqa: BLE001
+                    except (OSError, json.JSONDecodeError, sqlite3.Error) as e:
                         print(f"Error migrating old state: {e}")
 
     def get_all(self):

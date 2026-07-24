@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
@@ -24,22 +24,24 @@ def execute_compose_update(working_dir: str, container_name: str):
 
     if Path(working_dir).is_dir():
         # Fast path: directory is mounted locally in this container
-        pull_res = subprocess.run(  # noqa: PLW1510
+        pull_res = subprocess.run(
             ["docker", "compose", "pull"],
             cwd=working_dir,
             capture_output=True,
             text=True,
+            check=False,
         )
         if pull_res.returncode != 0:
-            raise Exception(f"Pull failed: {pull_res.stderr}")  # noqa: TRY002
-        up_res = subprocess.run(  # noqa: PLW1510
+            raise RuntimeError(f"Pull failed: {pull_res.stderr}")
+        up_res = subprocess.run(
             ["docker", "compose", "up", "-d", "--force-recreate"],
             cwd=working_dir,
             capture_output=True,
             text=True,
+            check=False,
         )
         if up_res.returncode != 0:
-            raise Exception(f"Up failed: {up_res.stderr}")  # noqa: TRY002
+            raise RuntimeError(f"Up failed: {up_res.stderr}")
         return pull_res.stdout + "\n" + up_res.stdout
 
     # Auto-mount path: execute via ephemeral sibling container
@@ -85,7 +87,7 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Pulling latest image: {image_ref}...", "INFO")
     try:
         client.images.pull(image_ref)
-    except Exception as e:  # noqa: BLE001
+    except MONITOR_EXCEPTIONS as e:
         log_event(f"[{container_name}] Warning: Failed to pull image: {e}", "WARNING")
 
     config = attrs["Config"]
@@ -237,7 +239,7 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Stopping old container...", "INFO")
     try:
         container.stop(timeout=15)
-    except Exception as e:  # noqa: BLE001
+    except MONITOR_EXCEPTIONS as e:
         log_event(
             f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG"
         )
@@ -263,20 +265,20 @@ def execute_python_update(container_name: str):
                             f"[{container_name}] Connected to additional network: {net_name}",
                             "DEBUG",
                         )
-                    except Exception as e:  # noqa: BLE001
+                    except MONITOR_EXCEPTIONS as e:
                         log_event(
                             f"[{container_name}] Failed to connect to network {net_name}: {e}",
                             "WARNING",
                         )
 
         return f"Successfully recreated {container_name} via native Python SDK."
-    except Exception as e:
+    except MONITOR_EXCEPTIONS as e:
         log_event(f"[{container_name}] Recreation failed: {e}", "ERROR")
         raise
 
 
 def log_event(msg: str, level="INFO"):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ005
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
     try:
         if LOG_F.exists() and LOG_F.stat().st_size > 10 * 1024 * 1024:
@@ -288,8 +290,8 @@ def log_event(msg: str, level="INFO"):
                 f.write(tail[tail.find("\n") + 1 :])
         with open(LOG_F, "a") as f:
             f.write(log_line)
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except MONITOR_EXCEPTIONS as e:
+        print(f"Ignored error: {e}")
     print(log_line.strip())
 
 
@@ -303,8 +305,8 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 with open(CONFIG_F, "r") as f:
                     cfg = yaml.safe_load(f) or {}
                     lines = int(cfg.get("general", {}).get("log_lines_to_check", 20))
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except MONITOR_EXCEPTIONS as e:
+                print(f"Ignored error: {e}")
         logs = container.logs(tail=lines).decode("utf-8", errors="replace")
         if filter_str:
             pattern = re.compile(filter_str, re.IGNORECASE)
@@ -312,7 +314,7 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 [line for line in logs.splitlines() if pattern.search(line)]
             )
         return logs
-    except Exception as e:  # noqa: BLE001
+    except MONITOR_EXCEPTIONS as e:
         return f"Error fetching logs: {e}"
 
 
@@ -351,8 +353,8 @@ def get_registry_tags(image_name):
         resp = httpx.get(tags_url, headers=headers, timeout=10)
         if resp.status_code == 200:
             return resp.json().get("tags", [])
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except MONITOR_EXCEPTIONS as e:
+        print(f"Ignored error: {e}")
     return []
 
 
@@ -409,8 +411,8 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
                         and plat.get("os") == os_name
                     ) and m.get("digest"):
                         digests.add(m.get("digest"))
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except MONITOR_EXCEPTIONS as e:
+        print(f"Ignored error: {e}")
     return list(digests)
 
 
@@ -439,6 +441,16 @@ def get_latest_tag(tags, current_tag, strategy):
     return valid_tags[-1]
 
 
+MONITOR_EXCEPTIONS = (
+    OSError,
+    ValueError,
+    KeyError,
+    TypeError,
+    RuntimeError,
+    ConnectionError,
+)
+
+
 class Monitor:
     def __init__(self, force=False, **kwargs):
         self.force = force
@@ -448,7 +460,7 @@ class Monitor:
                 self.config = yaml.safe_load(f) or {}
         try:
             self.client = docker.from_env()
-        except Exception as e:  # noqa: BLE001
+        except MONITOR_EXCEPTIONS as e:
             self.client = None
             log_event(f"Docker connection failed: {e}", "ERROR")
 
@@ -471,7 +483,7 @@ class Monitor:
             self.state_mgr.update(self.state)
             if self.on_update:
                 self.on_update("state_changed", self.state)
-        except Exception as e:  # noqa: BLE001
+        except MONITOR_EXCEPTIONS as e:
             log_event(f"Failed to save state: {e}", "ERROR")
 
     def run(self):
@@ -489,8 +501,8 @@ class Monitor:
         if hc_url:
             try:
                 httpx.get(f"{hc_url.rstrip('/')}/start", timeout=5)
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except MONITOR_EXCEPTIONS as e:
+                print(f"Ignored error: {e}")
 
         containers = self.client.containers.list(all=True)
         log_event(f"Found {len(containers)} containers to evaluate.", "INFO")
@@ -574,8 +586,8 @@ class Monitor:
                     log_event(
                         f"[{name}] Memory usage high: {mem_percent:.1f}%", "WARNING"
                     )
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except MONITOR_EXCEPTIONS as e:
+                print(f"Ignored error: {e}")
 
             # Disk Space
             disk_threshold = int(
@@ -605,8 +617,8 @@ class Monitor:
                                         f"[{name}] Disk usage high ({usage_str}%) at {dest}",
                                         "WARNING",
                                     )
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except MONITOR_EXCEPTIONS as e:
+                    print(f"Ignored error: {e}")
 
             # Network
             if "stats" in locals() and stats:
@@ -628,8 +640,8 @@ class Monitor:
                                 f"[{name}] Network issues: {errors} errors/drops on {iface}",
                                 "WARNING",
                             )
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except MONITOR_EXCEPTIONS as e:
+                    print(f"Ignored error: {e}")
 
             # Logs
             try:
@@ -646,17 +658,18 @@ class Monitor:
 
                 has_error = False
                 for line in logs.splitlines():
-                    if any(re.search(ep, line, re.IGNORECASE) for ep in error_patterns):  # noqa: SIM102
-                        if not any(
-                            re.search(ip, line, re.IGNORECASE) for ip in ignore_patterns
-                        ):
-                            has_error = True
-                            break
+                    if any(
+                        re.search(ep, line, re.IGNORECASE) for ep in error_patterns
+                    ) and not any(
+                        re.search(ip, line, re.IGNORECASE) for ip in ignore_patterns
+                    ):
+                        has_error = True
+                        break
                 if has_error:
                     issues.append("Logs: Errors detected")
                     log_event(f"[{name}] Log errors detected.", "WARNING")
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except MONITOR_EXCEPTIONS as e:
+                print(f"Ignored error: {e}")
 
             # Updates
             try:
@@ -725,11 +738,12 @@ class Monitor:
                                     },
                                 }
                                 issues.append(f"Updates: {msg}")
-                                if au_enabled and (current_tag in au_tags):  # noqa: SIM102
-                                    if (not au_exclude or name not in au_exclude) and (
-                                        not au_include or name in au_include
-                                    ):
-                                        containers_to_auto_update.append(name)
+                                if (
+                                    (au_enabled and (current_tag in au_tags))
+                                    and (not au_exclude or name not in au_exclude)
+                                    and (not au_include or name in au_include)
+                                ):
+                                    containers_to_auto_update.append(name)
                             else:
                                 self.state["updates"][cache_key] = {
                                     "key": cache_key,
@@ -760,7 +774,7 @@ class Monitor:
                                     image_ref
                                 )
                                 remote_digest = reg_data.id
-                            except Exception:  # noqa: BLE001
+                            except MONITOR_EXCEPTIONS:
                                 remote_digest = None
 
                             remote_digests = []
@@ -797,11 +811,12 @@ class Monitor:
                                     },
                                 }
                                 issues.append(f"Updates: {msg}")
-                                if au_enabled and (current_tag in au_tags):  # noqa: SIM102
-                                    if (not au_exclude or name not in au_exclude) and (
-                                        not au_include or name in au_include
-                                    ):
-                                        containers_to_auto_update.append(name)
+                                if (
+                                    (au_enabled and (current_tag in au_tags))
+                                    and (not au_exclude or name not in au_exclude)
+                                    and (not au_include or name in au_include)
+                                ):
+                                    containers_to_auto_update.append(name)
                             else:
                                 self.state["updates"][cache_key] = {
                                     "key": cache_key,
@@ -812,8 +827,8 @@ class Monitor:
                                         "timestamp": int(time.time()),
                                     },
                                 }
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except MONITOR_EXCEPTIONS as e:
+                print(f"Ignored error: {e}")
 
             if issues:
                 issues_found[name] = " | ".join(issues)
@@ -834,16 +849,16 @@ class Monitor:
             )
             for au_name in containers_to_auto_update:
                 try:
-                    inspect = subprocess.run(  # noqa: PLW1510
+                    inspect = subprocess.run(
                         [
                             "docker",
                             "inspect",
-                            "--format",
-                            '{{index .Config.Labels "com.docker.compose.project.working_dir"}}',
+                            "--format='{{.Config.WorkingDir}}'",
                             au_name,
                         ],
                         capture_output=True,
                         text=True,
+                        check=False,
                     )
                     wdir = inspect.stdout.strip()
                     fallback_needed = False
@@ -851,7 +866,7 @@ class Monitor:
                         try:
                             execute_compose_update(wdir, au_name)
                             log_event(f"Successfully auto-updated {au_name}", "GOOD")
-                        except Exception as e:  # noqa: BLE001
+                        except MONITOR_EXCEPTIONS as e:
                             log_event(
                                 f"Compose auto-update failed for {au_name}: {e}. Falling back to native SDK update.",
                                 "WARNING",
@@ -866,7 +881,7 @@ class Monitor:
                             f"Successfully auto-updated {au_name} using native Python SDK",
                             "GOOD",
                         )
-                except Exception as e:  # noqa: BLE001
+                except MONITOR_EXCEPTIONS as e:
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 
         if hc_url:
@@ -889,8 +904,8 @@ class Monitor:
                     httpx.post(f"{hc_url.rstrip('/')}/fail", data=msg, timeout=5)
                 else:
                     httpx.post(f"{hc_url.rstrip('/')}", data="OK", timeout=5)
-            except Exception:  # noqa: BLE001, S110
-                pass
+            except MONITOR_EXCEPTIONS as e:
+                print(f"Ignored error: {e}")
 
         if issues_found:
             self.send_notifications(issues_found)
@@ -926,8 +941,8 @@ class Monitor:
                             ],
                         },
                     )
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except MONITOR_EXCEPTIONS as e:
+                    print(f"Ignored error: {e}")
         elif channel == "ntfy":
             url = self.config.get("notifications", {}).get("ntfy", {}).get("server_url")
             topic = self.config.get("notifications", {}).get("ntfy", {}).get("topic")
@@ -940,8 +955,8 @@ class Monitor:
                     headers["Authorization"] = f"Bearer {token}"
                 try:
                     httpx.post(f"{url}/{topic}", headers=headers, content=msg)
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except MONITOR_EXCEPTIONS as e:
+                    print(f"Ignored error: {e}")
         elif channel == "generic":
             url = (
                 self.config.get("notifications", {})
@@ -951,5 +966,5 @@ class Monitor:
             if url:
                 try:
                     httpx.post(url, json={"text": f"{title}: {msg}"})
-                except Exception:  # noqa: BLE001, S110
-                    pass
+                except MONITOR_EXCEPTIONS as e:
+                    print(f"Ignored error: {e}")
