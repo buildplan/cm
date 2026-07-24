@@ -87,7 +87,14 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Pulling latest image: {image_ref}...", "INFO")
     try:
         client.images.pull(image_ref)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         log_event(f"[{container_name}] Warning: Failed to pull image: {e}", "WARNING")
 
     config = attrs["Config"]
@@ -239,7 +246,14 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Stopping old container...", "INFO")
     try:
         container.stop(timeout=15)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         log_event(
             f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG"
         )
@@ -265,14 +279,28 @@ def execute_python_update(container_name: str):
                             f"[{container_name}] Connected to additional network: {net_name}",
                             "DEBUG",
                         )
-                    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                    except (
+                        OSError,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        RuntimeError,
+                        ConnectionError,
+                    ) as e:
                         log_event(
                             f"[{container_name}] Failed to connect to network {net_name}: {e}",
                             "WARNING",
                         )
 
         return f"Successfully recreated {container_name} via native Python SDK."
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         log_event(f"[{container_name}] Recreation failed: {e}", "ERROR")
         raise
 
@@ -290,7 +318,14 @@ def log_event(msg: str, level="INFO"):
                 f.write(tail[tail.find("\n") + 1 :])
         with open(LOG_F, "a") as f:
             f.write(log_line)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         print(f"Ignored error: {e}")
     print(log_line.strip())
 
@@ -305,7 +340,14 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 with open(CONFIG_F, "r") as f:
                     cfg = yaml.safe_load(f) or {}
                     lines = int(cfg.get("general", {}).get("log_lines_to_check", 20))
-            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                ConnectionError,
+            ) as e:
                 print(f"Ignored error: {e}")
         logs = container.logs(tail=lines).decode("utf-8", errors="replace")
         if filter_str:
@@ -314,7 +356,14 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 [line for line in logs.splitlines() if pattern.search(line)]
             )
         return logs
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         return f"Error fetching logs: {e}"
 
 
@@ -353,7 +402,14 @@ def get_registry_tags(image_name):
         resp = httpx.get(tags_url, headers=headers, timeout=10)
         if resp.status_code == 200:
             return resp.json().get("tags", [])
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         print(f"Ignored error: {e}")
     return []
 
@@ -411,7 +467,14 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
                         and plat.get("os") == os_name
                     ) and m.get("digest"):
                         digests.add(m.get("digest"))
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        ConnectionError,
+    ) as e:
         print(f"Ignored error: {e}")
     return list(digests)
 
@@ -450,7 +513,14 @@ class Monitor:
                 self.config = yaml.safe_load(f) or {}
         try:
             self.client = docker.from_env()
-        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+            ConnectionError,
+        ) as e:
             self.client = None
             log_event(f"Docker connection failed: {e}", "ERROR")
 
@@ -473,7 +543,14 @@ class Monitor:
             self.state_mgr.update(self.state)
             if self.on_update:
                 self.on_update("state_changed", self.state)
-        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RuntimeError,
+            ConnectionError,
+        ) as e:
             log_event(f"Failed to save state: {e}", "ERROR")
 
     def run(self):
@@ -491,7 +568,14 @@ class Monitor:
         if hc_url:
             try:
                 httpx.get(f"{hc_url.rstrip('/')}/start", timeout=5)
-            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                ConnectionError,
+            ) as e:
                 print(f"Ignored error: {e}")
 
         containers = self.client.containers.list(all=True)
@@ -576,7 +660,14 @@ class Monitor:
                     log_event(
                         f"[{name}] Memory usage high: {mem_percent:.1f}%", "WARNING"
                     )
-            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                ConnectionError,
+            ) as e:
                 print(f"Ignored error: {e}")
 
             # Disk Space
@@ -607,7 +698,14 @@ class Monitor:
                                         f"[{name}] Disk usage high ({usage_str}%) at {dest}",
                                         "WARNING",
                                     )
-                except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                    ConnectionError,
+                ) as e:
                     print(f"Ignored error: {e}")
 
             # Network
@@ -630,7 +728,14 @@ class Monitor:
                                 f"[{name}] Network issues: {errors} errors/drops on {iface}",
                                 "WARNING",
                             )
-                except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                    ConnectionError,
+                ) as e:
                     print(f"Ignored error: {e}")
 
             # Logs
@@ -648,7 +753,9 @@ class Monitor:
 
                 has_error = False
                 for line in logs.splitlines():
-                    if any(re.search(ep, line, re.IGNORECASE) for ep in error_patterns) and not any(
+                    if any(
+                        re.search(ep, line, re.IGNORECASE) for ep in error_patterns
+                    ) and not any(
                         re.search(ip, line, re.IGNORECASE) for ip in ignore_patterns
                     ):
                         has_error = True
@@ -656,7 +763,14 @@ class Monitor:
                 if has_error:
                     issues.append("Logs: Errors detected")
                     log_event(f"[{name}] Log errors detected.", "WARNING")
-            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                ConnectionError,
+            ) as e:
                 print(f"Ignored error: {e}")
 
             # Updates
@@ -726,8 +840,10 @@ class Monitor:
                                     },
                                 }
                                 issues.append(f"Updates: {msg}")
-                                if (au_enabled and (current_tag in au_tags)) and (not au_exclude or name not in au_exclude) and (
-                                    not au_include or name in au_include
+                                if (
+                                    (au_enabled and (current_tag in au_tags))
+                                    and (not au_exclude or name not in au_exclude)
+                                    and (not au_include or name in au_include)
                                 ):
                                     containers_to_auto_update.append(name)
                             else:
@@ -760,7 +876,14 @@ class Monitor:
                                     image_ref
                                 )
                                 remote_digest = reg_data.id
-                            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
+                            except (
+                                OSError,
+                                ValueError,
+                                KeyError,
+                                TypeError,
+                                RuntimeError,
+                                ConnectionError,
+                            ):
                                 remote_digest = None
 
                             remote_digests = []
@@ -797,8 +920,10 @@ class Monitor:
                                     },
                                 }
                                 issues.append(f"Updates: {msg}")
-                                if (au_enabled and (current_tag in au_tags)) and (not au_exclude or name not in au_exclude) and (
-                                    not au_include or name in au_include
+                                if (
+                                    (au_enabled and (current_tag in au_tags))
+                                    and (not au_exclude or name not in au_exclude)
+                                    and (not au_include or name in au_include)
                                 ):
                                     containers_to_auto_update.append(name)
                             else:
@@ -811,7 +936,14 @@ class Monitor:
                                         "timestamp": int(time.time()),
                                     },
                                 }
-            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                ConnectionError,
+            ) as e:
                 print(f"Ignored error: {e}")
 
             if issues:
@@ -850,7 +982,14 @@ class Monitor:
                         try:
                             execute_compose_update(wdir, au_name)
                             log_event(f"Successfully auto-updated {au_name}", "GOOD")
-                        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                        except (
+                            OSError,
+                            ValueError,
+                            KeyError,
+                            TypeError,
+                            RuntimeError,
+                            ConnectionError,
+                        ) as e:
                             log_event(
                                 f"Compose auto-update failed for {au_name}: {e}. Falling back to native SDK update.",
                                 "WARNING",
@@ -865,7 +1004,14 @@ class Monitor:
                             f"Successfully auto-updated {au_name} using native Python SDK",
                             "GOOD",
                         )
-                except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                    ConnectionError,
+                ) as e:
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 
         if hc_url:
@@ -888,7 +1034,14 @@ class Monitor:
                     httpx.post(f"{hc_url.rstrip('/')}/fail", data=msg, timeout=5)
                 else:
                     httpx.post(f"{hc_url.rstrip('/')}", data="OK", timeout=5)
-            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                RuntimeError,
+                ConnectionError,
+            ) as e:
                 print(f"Ignored error: {e}")
 
         if issues_found:
@@ -925,7 +1078,14 @@ class Monitor:
                             ],
                         },
                     )
-                except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                    ConnectionError,
+                ) as e:
                     print(f"Ignored error: {e}")
         elif channel == "ntfy":
             url = self.config.get("notifications", {}).get("ntfy", {}).get("server_url")
@@ -939,7 +1099,14 @@ class Monitor:
                     headers["Authorization"] = f"Bearer {token}"
                 try:
                     httpx.post(f"{url}/{topic}", headers=headers, content=msg)
-                except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                    ConnectionError,
+                ) as e:
                     print(f"Ignored error: {e}")
         elif channel == "generic":
             url = (
@@ -950,5 +1117,12 @@ class Monitor:
             if url:
                 try:
                     httpx.post(url, json={"text": f"{title}: {msg}"})
-                except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+                except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    RuntimeError,
+                    ConnectionError,
+                ) as e:
                     print(f"Ignored error: {e}")
