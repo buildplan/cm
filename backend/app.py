@@ -7,7 +7,7 @@ import subprocess
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
@@ -65,7 +65,7 @@ SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
 
 # --- Unified Logging Function ---
 def log_event(msg: str, level="INFO"):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # noqa: DTZ005
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
     try:
         if LOG_F.exists() and LOG_F.stat().st_size > 10 * 1024 * 1024:
@@ -77,8 +77,8 @@ def log_event(msg: str, level="INFO"):
                 f.write(tail[tail.find("\n") + 1 :])
         with open(LOG_F, "a") as f:
             f.write(log_line)
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+        print(f"Ignored error: {e}")
     print(log_line.strip())
 
 
@@ -201,7 +201,7 @@ async def token_auth(request: Request, call_next):
             has_passkeys = (
                 len(await asyncio.to_thread(mgr.get_webauthn_credentials, "admin")) > 0
             )
-        except Exception:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
             has_passkeys = False
 
         try:
@@ -212,7 +212,7 @@ async def token_auth(request: Request, call_next):
 
             cfg = await asyncio.to_thread(load_cfg)
             disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
-        except Exception:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
             disable_token_auth = False
 
         if disable_token_auth and not has_passkeys:
@@ -285,7 +285,7 @@ async def scheduled_run():
     try:
         monitor = Monitor(on_update=broadcast_event)
         await asyncio.to_thread(monitor.run)
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         log_event(f"Scheduled run failed: {e}", "ERROR")
 
 
@@ -319,7 +319,7 @@ async def docker_event_listener():
                             )
                             for q in list(sse_clients):
                                 loop.call_soon_threadsafe(q.put_nowait, msg)
-            except Exception as e:  # noqa: BLE001
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
                 loop.call_soon_threadsafe(
                     log_event,
                     f"Docker event listener disconnected: {e}. Retrying in 5 seconds...",
@@ -329,7 +329,7 @@ async def docker_event_listener():
 
     try:
         await asyncio.to_thread(listen_events)
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         log_event(f"Docker event listener thread failed: {e}", "ERROR")
 
 
@@ -350,7 +350,7 @@ async def startup():
                 ]
 
             discovered_containers = await asyncio.to_thread(fetch_names)
-        except Exception as e:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
             print(f"Failed to auto-discover containers: {e}")
             discovered_containers = []
 
@@ -489,10 +489,12 @@ async def startup():
 
     # Read interval from existing config.yml
     try:
-        with open(CONFIG_F, "r") as f:  # noqa: ASYNC230
-            cfg = yaml.safe_load(f)
+        def _read_cfg():
+            with open(CONFIG_F, "r") as f:
+                return yaml.safe_load(f)
+        cfg = await asyncio.to_thread(_read_cfg)
         interval_mins = int(cfg.get("general", {}).get("monitor_interval_minutes", 360))
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
         interval_mins = 360
 
     scheduler.add_job(
@@ -507,14 +509,14 @@ def auth_status():
     try:
         mgr = StateManager(STATE_DB)
         has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
         has_passkeys = False
 
     try:
         with open(CONFIG_F, "r") as f:
             cfg = yaml.safe_load(f)
         disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
         disable_token_auth = False
 
     if disable_token_auth and not has_passkeys:
@@ -586,7 +588,7 @@ async def register_verify(request: Request):
             expected_rp_id=rp_id,
             expected_origin=origin,
         )
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     mgr = StateManager(STATE_DB)
@@ -631,7 +633,7 @@ async def login_verify(request: Request):
 
     try:
         cred_id_bytes = base64url_to_bytes(cred_id_str)
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
         raise HTTPException(status_code=400, detail="Invalid credential encoding")
 
     creds = mgr.get_webauthn_credentials("admin")
@@ -650,7 +652,7 @@ async def login_verify(request: Request):
             credential_public_key=base64.b64decode(cred_match["public_key"]),
             credential_current_sign_count=cred_match["sign_count"],
         )
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     mgr.update_webauthn_sign_count(cred_match["id"], verification.new_sign_count)
@@ -689,7 +691,7 @@ async def get_containers():
             return res
 
         return await asyncio.to_thread(fetch)
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         log_event(f"Error fetching containers: {e}", "ERROR")
         return []
 
@@ -709,7 +711,7 @@ async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
         try:
             monitor = Monitor(force=force, on_update=broadcast_event)
             monitor.run()
-        except Exception as e:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
             log_event(f"Manual monitor check failed: {e}", "ERROR")
         finally:
             _check_running = False
@@ -727,17 +729,20 @@ def get_check_status():
 @app.post("/api/update/{container_name:path}")
 async def update_container(container_name: str):
     log_event(f"Pull & Recreate requested for container: {container_name}", "API")
-    inspect = subprocess.run(  # noqa: ASYNC221, PLW1510
-        [
-            "docker",
-            "inspect",
-            "--format",
-            '{{index .Config.Labels "com.docker.compose.project.working_dir"}}',
-            container_name,
-        ],
-        capture_output=True,
-        text=True,
-    )
+    def _run_inspect():
+        return subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                '{{index .Config.Labels "com.docker.compose.project.working_dir"}}',
+                container_name,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    inspect = await asyncio.to_thread(_run_inspect)
     working_dir = inspect.stdout.strip()
     from backend.monitor import execute_compose_update, execute_python_update
 
@@ -748,7 +753,7 @@ async def update_container(container_name: str):
             output = await asyncio.to_thread(
                 execute_compose_update, working_dir, container_name
             )
-        except Exception as e:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
             log_event(
                 f"Compose update failed for {container_name}: {e}. Falling back to native SDK update.",
                 "WARNING",
@@ -760,7 +765,7 @@ async def update_container(container_name: str):
     if fallback_needed:
         try:
             output = await asyncio.to_thread(execute_python_update, container_name)
-        except Exception as e:  # noqa: BLE001
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
             log_event(f"Update failed for {container_name}: {e}", "ERROR")
             return {"exit_code": 1, "output": str(e), "error": str(e)}
 
@@ -824,7 +829,7 @@ def get_config():
     try:
         with open(CONFIG_F, "r") as f:
             return PlainTextResponse(f.read())
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -833,7 +838,7 @@ def get_config_json():
     try:
         with open(CONFIG_F, "r") as f:
             return yaml.safe_load(f)
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -845,8 +850,10 @@ async def update_config(request: Request):
         parsed_yaml = yaml.safe_load(yaml_str)
         AppConfig(**parsed_yaml)
 
-        with open(CONFIG_F, "w") as f:  # noqa: ASYNC230
-            f.write(yaml_str)
+        def _write_cfg():
+            with open(CONFIG_F, "w") as f:
+                f.write(yaml_str)
+        await asyncio.to_thread(_write_cfg)
 
         new_interval = int(
             parsed_yaml.get("general", {}).get("monitor_interval_minutes", 360)
@@ -859,7 +866,7 @@ async def update_config(request: Request):
             "API",
         )
         return {"status": "saved"}
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -869,8 +876,10 @@ async def update_config_json(request: Request):
         data = await request.json()
         AppConfig(**data)
 
-        with open(CONFIG_F, "w") as f:  # noqa: ASYNC230
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        def _write_cfg_data():
+            with open(CONFIG_F, "w") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        await asyncio.to_thread(_write_cfg_data)
 
         new_interval = int(data.get("general", {}).get("monitor_interval_minutes", 360))
         scheduler.reschedule_job(
@@ -881,7 +890,7 @@ async def update_config_json(request: Request):
             "API",
         )
         return {"status": "saved"}
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -898,7 +907,7 @@ def get_host_stats():
         with open(CONFIG_F, "r") as f:
             cfg = yaml.safe_load(f)
             fs = cfg.get("host_system", {}).get("disk_check_filesystem", "/hostfs")
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
         fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
 
     disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
@@ -922,11 +931,11 @@ def get_host_stats():
             disk_info["size"] = format_size(total)
             disk_info["used"] = format_size(used)
             disk_info["percent"] = f"{percent}%"
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+        print(f"Ignored error: {e}")
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
     try:
-        mem_cmd = subprocess.run(["free", "-m"], capture_output=True, text=True)  # noqa: PLW1510
+        mem_cmd = subprocess.run(["free", "-m"], capture_output=True, text=True, check=False)
         mem_lines = mem_cmd.stdout.strip().split("\n")
         if len(mem_lines) > 1:
             parts = mem_lines[1].split()
@@ -946,14 +955,14 @@ def get_host_stats():
                         "used": f"{used}MB",
                         "percent": f"{percent}%",
                     }
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+        print(f"Ignored error: {e}")
     cpu_load = "0.00"
     try:
         with open("/proc/loadavg", "r") as f:
             cpu_load = f.read().split()[0]
-    except Exception:  # noqa: BLE001, S110
-        pass
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError) as e:
+        print(f"Ignored error: {e}")
     return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
 
 
