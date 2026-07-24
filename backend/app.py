@@ -63,6 +63,16 @@ LOG_F = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
 
 
+MONITOR_EXCEPTIONS = (
+    OSError,
+    ValueError,
+    KeyError,
+    TypeError,
+    RuntimeError,
+    ConnectionError,
+)
+
+
 # --- Unified Logging Function ---
 def log_event(msg: str, level="INFO"):
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -77,14 +87,7 @@ def log_event(msg: str, level="INFO"):
                 f.write(tail[tail.find("\n") + 1 :])
         with open(LOG_F, "a") as f:
             f.write(log_line)
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         print(f"Ignored error: {e}")
     print(log_line.strip())
 
@@ -208,14 +211,7 @@ async def token_auth(request: Request, call_next):
             has_passkeys = (
                 len(await asyncio.to_thread(mgr.get_webauthn_credentials, "admin")) > 0
             )
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            ConnectionError,
-        ):
+        except MONITOR_EXCEPTIONS:
             has_passkeys = False
 
         try:
@@ -226,14 +222,7 @@ async def token_auth(request: Request, call_next):
 
             cfg = await asyncio.to_thread(load_cfg)
             disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            ConnectionError,
-        ):
+        except MONITOR_EXCEPTIONS:
             disable_token_auth = False
 
         if disable_token_auth and not has_passkeys:
@@ -306,14 +295,7 @@ async def scheduled_run():
     try:
         monitor = Monitor(on_update=broadcast_event)
         await asyncio.to_thread(monitor.run)
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         log_event(f"Scheduled run failed: {e}", "ERROR")
 
 
@@ -347,14 +329,7 @@ async def docker_event_listener():
                             )
                             for q in list(sse_clients):
                                 loop.call_soon_threadsafe(q.put_nowait, msg)
-            except (
-                OSError,
-                ValueError,
-                KeyError,
-                TypeError,
-                RuntimeError,
-                ConnectionError,
-            ) as e:
+            except MONITOR_EXCEPTIONS as e:
                 loop.call_soon_threadsafe(
                     log_event,
                     f"Docker event listener disconnected: {e}. Retrying in 5 seconds...",
@@ -364,14 +339,7 @@ async def docker_event_listener():
 
     try:
         await asyncio.to_thread(listen_events)
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         log_event(f"Docker event listener thread failed: {e}", "ERROR")
 
 
@@ -392,14 +360,7 @@ async def startup():
                 ]
 
             discovered_containers = await asyncio.to_thread(fetch_names)
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            ConnectionError,
-        ) as e:
+        except MONITOR_EXCEPTIONS as e:
             print(f"Failed to auto-discover containers: {e}")
             discovered_containers = []
 
@@ -545,7 +506,7 @@ async def startup():
 
         cfg = await asyncio.to_thread(_read_cfg)
         interval_mins = int(cfg.get("general", {}).get("monitor_interval_minutes", 360))
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
+    except MONITOR_EXCEPTIONS:
         interval_mins = 360
 
     scheduler.add_job(
@@ -560,14 +521,14 @@ def auth_status():
     try:
         mgr = StateManager(STATE_DB)
         has_passkeys = len(mgr.get_webauthn_credentials("admin")) > 0
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
+    except MONITOR_EXCEPTIONS:
         has_passkeys = False
 
     try:
         with open(CONFIG_F, "r") as f:
             cfg = yaml.safe_load(f)
         disable_token_auth = cfg.get("auth", {}).get("disable_token_auth", False)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
+    except MONITOR_EXCEPTIONS:
         disable_token_auth = False
 
     if disable_token_auth and not has_passkeys:
@@ -639,14 +600,7 @@ async def register_verify(request: Request):
             expected_rp_id=rp_id,
             expected_origin=origin,
         )
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     mgr = StateManager(STATE_DB)
@@ -691,7 +645,7 @@ async def login_verify(request: Request):
 
     try:
         cred_id_bytes = base64url_to_bytes(cred_id_str)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
+    except MONITOR_EXCEPTIONS:
         raise HTTPException(status_code=400, detail="Invalid credential encoding")
 
     creds = mgr.get_webauthn_credentials("admin")
@@ -710,14 +664,7 @@ async def login_verify(request: Request):
             credential_public_key=base64.b64decode(cred_match["public_key"]),
             credential_current_sign_count=cred_match["sign_count"],
         )
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     mgr.update_webauthn_sign_count(cred_match["id"], verification.new_sign_count)
@@ -756,14 +703,7 @@ async def get_containers():
             return res
 
         return await asyncio.to_thread(fetch)
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         log_event(f"Error fetching containers: {e}", "ERROR")
         return []
 
@@ -783,14 +723,7 @@ async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
         try:
             monitor = Monitor(force=force, on_update=broadcast_event)
             monitor.run()
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            ConnectionError,
-        ) as e:
+        except MONITOR_EXCEPTIONS as e:
             log_event(f"Manual monitor check failed: {e}", "ERROR")
         finally:
             _check_running = False
@@ -834,14 +767,7 @@ async def update_container(container_name: str):
             output = await asyncio.to_thread(
                 execute_compose_update, working_dir, container_name
             )
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            ConnectionError,
-        ) as e:
+        except MONITOR_EXCEPTIONS as e:
             log_event(
                 f"Compose update failed for {container_name}: {e}. Falling back to native SDK update.",
                 "WARNING",
@@ -853,14 +779,7 @@ async def update_container(container_name: str):
     if fallback_needed:
         try:
             output = await asyncio.to_thread(execute_python_update, container_name)
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            TypeError,
-            RuntimeError,
-            ConnectionError,
-        ) as e:
+        except MONITOR_EXCEPTIONS as e:
             log_event(f"Update failed for {container_name}: {e}", "ERROR")
             return {"exit_code": 1, "output": str(e), "error": str(e)}
 
@@ -924,14 +843,7 @@ def get_config():
     try:
         with open(CONFIG_F, "r") as f:
             return PlainTextResponse(f.read())
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -940,14 +852,7 @@ def get_config_json():
     try:
         with open(CONFIG_F, "r") as f:
             return yaml.safe_load(f)
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -976,14 +881,7 @@ async def update_config(request: Request):
             "API",
         )
         return {"status": "saved"}
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -1008,14 +906,7 @@ async def update_config_json(request: Request):
             "API",
         )
         return {"status": "saved"}
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -1032,7 +923,7 @@ def get_host_stats():
         with open(CONFIG_F, "r") as f:
             cfg = yaml.safe_load(f)
             fs = cfg.get("host_system", {}).get("disk_check_filesystem", "/hostfs")
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, ConnectionError):
+    except MONITOR_EXCEPTIONS:
         fs = os.environ.get("HOST_DISK_CHECK_FILESYSTEM", "/hostfs")
 
     disk_info = {"percent": "0%", "size": "0G", "used": "0G", "fs": fs}
@@ -1056,14 +947,7 @@ def get_host_stats():
             disk_info["size"] = format_size(total)
             disk_info["used"] = format_size(used)
             disk_info["percent"] = f"{percent}%"
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         print(f"Ignored error: {e}")
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
     try:
@@ -1089,27 +973,13 @@ def get_host_stats():
                         "used": f"{used}MB",
                         "percent": f"{percent}%",
                     }
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         print(f"Ignored error: {e}")
     cpu_load = "0.00"
     try:
         with open("/proc/loadavg", "r") as f:
             cpu_load = f.read().split()[0]
-    except (
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        RuntimeError,
-        ConnectionError,
-    ) as e:
+    except MONITOR_EXCEPTIONS as e:
         print(f"Ignored error: {e}")
     return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
 
