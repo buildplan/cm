@@ -2,7 +2,6 @@ import os
 import re
 import subprocess
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
@@ -315,7 +314,7 @@ def get_docker_auth(registry):
                     auth = auth_data.get("auth")
                     if auth:
                         return f"Basic {auth}"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         log_event(f"Failed to read docker config: {e}", "WARNING")
     return None
 
@@ -622,7 +621,7 @@ class Monitor:
                             if usage_pct > disk_threshold:
                                 issues.append(f"Disk: High usage ({usage_pct}%) at {dest}")
                                 log_event(f"[{name}] Disk usage high ({usage_pct}%) at {dest}", "WARNING")
-                except MONITOR_EXCEPTIONS as e:
+                except MONITOR_EXCEPTIONS:
                     pass
 
             # Network

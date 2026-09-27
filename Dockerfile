@@ -25,7 +25,7 @@ FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cab
 ARG TARGETARCH
 
 # hadolint ignore=DL3018,DL3059
-RUN apk add --no-cache wget ca-certificates
+RUN apk add --no-cache wget ca-certificates libstdc++ libgcc
 
 RUN set -eu; \
     case "${TARGETARCH}" in \

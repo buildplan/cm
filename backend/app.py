@@ -7,7 +7,6 @@ import subprocess
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
@@ -34,6 +33,7 @@ from webauthn.helpers.structs import (
 from backend.config import AppConfig
 from backend.monitor import Monitor, get_container_logs
 from backend.state import StateManager
+from backend.utils import MONITOR_EXCEPTIONS, log_event
 
 
 class ConfigUpdate(BaseModel):
@@ -61,10 +61,6 @@ STATE_DB = DATA_DIR / "monitor_state.db"
 CONFIG_F = DATA_DIR / "config.yml"
 LOG_F = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
-
-
-from backend.utils import MONITOR_EXCEPTIONS, log_event
-
 
 DEFAULT_CONFIG_TEMPLATE = """# Docker Container Monitor Configuration
 
@@ -222,21 +218,20 @@ async def token_auth(request: Request, call_next):
                 token = request.query_params.get("token", "")
 
             # Check Token Login
-            if not is_valid:
-                if (
-                    (
-                        not disable_token_auth
-                        and SECRET_TOKEN
-                        and token
-                        and secrets.compare_digest(token.encode(), SECRET_TOKEN.encode())
-                    )
-                    or (
-                        token
-                        and has_passkeys
-                        and mgr.is_valid_auth_session(token)
-                    )
-                ):
-                    is_valid = True
+            if not is_valid and (
+                (
+                    not disable_token_auth
+                    and SECRET_TOKEN
+                    and token
+                    and secrets.compare_digest(token.encode(), SECRET_TOKEN.encode())
+                )
+                or (
+                    token
+                    and has_passkeys
+                    and mgr.is_valid_auth_session(token)
+                )
+            ):
+                is_valid = True
 
             if not is_valid:
                 record_auth_failure(client_ip)
