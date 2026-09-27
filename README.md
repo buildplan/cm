@@ -22,7 +22,7 @@ By default, the application is designed to run behind a Docker Socket Proxy (e.g
 ## Architecture
 
 * **Backend:** FastAPI (Python), APScheduler, Python Docker SDK, and a custom native HTTP OCI registry client.
-* **Frontend:** Single-page app using Vanilla JS, Tailwind CSS, CSS animations, and SSE. No Node.js build tools.
+* **Frontend:** Single-page app using Vanilla JS, Tailwind CSS, CSS animations, and SSE. Tailwind is compiled at build time and Chart.js is vendored, so all assets are served locally with no runtime CDN dependency (works fully offline). No Node.js build tools.
 * **Database:** SQLite (operating in WAL mode) stored in `/app/data/monitor_state.db`.
 
 ---

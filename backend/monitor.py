@@ -10,6 +10,7 @@ import httpx
 import yaml
 
 from backend.state import StateManager
+from backend.utils import MONITOR_EXCEPTIONS, log_event
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
 CONFIG_F = DATA_DIR / "config.yml"
@@ -277,24 +278,6 @@ def execute_python_update(container_name: str):
         raise
 
 
-def log_event(msg: str, level="INFO"):
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    log_line = f"{timestamp} [{level}] {msg}\n"
-    try:
-        if LOG_F.exists() and LOG_F.stat().st_size > 10 * 1024 * 1024:
-            with open(LOG_F, "r") as f:
-                f.seek(0, 2)
-                f.seek(max(f.tell() - 1024 * 1024, 0))
-                tail = f.read()
-            with open(LOG_F, "w") as f:
-                f.write(tail[tail.find("\n") + 1 :])
-        with open(LOG_F, "a") as f:
-            f.write(log_line)
-    except MONITOR_EXCEPTIONS as e:
-        print(f"Ignored error: {e}")
-    print(log_line.strip())
-
-
 def get_container_logs(container_name: str, filter_str: str = "") -> str:
     try:
         client = docker.from_env()
@@ -318,6 +301,25 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
         return f"Error fetching logs: {e}"
 
 
+def get_docker_auth(registry):
+    import json
+    config_path = Path("/root/.docker/config.json")
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, "r") as f:
+            cfg = json.load(f)
+            auths = cfg.get("auths", {})
+            for reg, auth_data in auths.items():
+                if registry in reg or reg in registry:
+                    auth = auth_data.get("auth")
+                    if auth:
+                        return f"Basic {auth}"
+    except Exception as e:
+        log_event(f"Failed to read docker config: {e}", "WARNING")
+    return None
+
+
 def get_registry_tags(image_name):
     if ":" in image_name:
         image_name = image_name.split(":")[0]
@@ -332,25 +334,33 @@ def get_registry_tags(image_name):
         repo = f"library/{image_name}"
     url = f"https://{registry}/v2/"
     try:
-        r = httpx.get(url, timeout=10)
+        basic_auth = get_docker_auth(registry)
+        headers = {}
+        if basic_auth:
+            headers["Authorization"] = basic_auth
+            
+        r = httpx.get(url, headers=headers, timeout=10)
         token = ""
         if r.status_code == 401:
-            auth = r.headers.get("Www-Authenticate", "")
-            if auth.lower().startswith("bearer"):
-                realm_m = re.search(r'realm="([^"]+)"', auth)
-                service_m = re.search(r'service="([^"]+)"', auth)
+            auth_header = r.headers.get("Www-Authenticate", "")
+            if auth_header.lower().startswith("bearer"):
+                realm_m = re.search(r'realm="([^"]+)"', auth_header)
+                service_m = re.search(r'service="([^"]+)"', auth_header)
                 if realm_m:
                     realm = realm_m.group(1)
                     service = service_m.group(1) if service_m else ""
                     auth_url = f"{realm}?service={service}&scope=repository:{repo}:pull"
-                    tr = httpx.get(auth_url, timeout=10)
+                    tr_headers = {"Authorization": basic_auth} if basic_auth else {}
+                    tr = httpx.get(auth_url, headers=tr_headers, timeout=10)
                     if tr.status_code == 200:
                         token = tr.json().get("token") or tr.json().get("access_token")
-        headers = {}
+                        
+        req_headers = {**headers}
         if token:
-            headers["Authorization"] = f"Bearer {token}"
+            req_headers["Authorization"] = f"Bearer {token}"
+            
         tags_url = f"https://{registry}/v2/{repo}/tags/list"
-        resp = httpx.get(tags_url, headers=headers, timeout=10)
+        resp = httpx.get(tags_url, headers=req_headers, timeout=10)
         if resp.status_code == 200:
             return resp.json().get("tags", [])
     except MONITOR_EXCEPTIONS as e:
@@ -376,27 +386,36 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
     url = f"https://{registry}/v2/"
     digests = set()
     try:
-        r = httpx.get(url, timeout=10)
+        basic_auth = get_docker_auth(registry)
+        headers = {}
+        if basic_auth:
+            headers["Authorization"] = basic_auth
+            
+        r = httpx.get(url, headers=headers, timeout=10)
         token = ""
         if r.status_code == 401:
-            auth = r.headers.get("Www-Authenticate", "")
-            if auth.lower().startswith("bearer"):
-                realm_m = re.search(r'realm="([^"]+)"', auth)
-                service_m = re.search(r'service="([^"]+)"', auth)
+            auth_header = r.headers.get("Www-Authenticate", "")
+            if auth_header.lower().startswith("bearer"):
+                realm_m = re.search(r'realm="([^"]+)"', auth_header)
+                service_m = re.search(r'service="([^"]+)"', auth_header)
                 if realm_m:
                     realm = realm_m.group(1)
                     service = service_m.group(1) if service_m else ""
                     auth_url = f"{realm}?service={service}&scope=repository:{repo}:pull"
-                    tr = httpx.get(auth_url, timeout=10)
+                    tr_headers = {"Authorization": basic_auth} if basic_auth else {}
+                    tr = httpx.get(auth_url, headers=tr_headers, timeout=10)
                     if tr.status_code == 200:
                         token = tr.json().get("token") or tr.json().get("access_token")
-        headers = {
-            "Accept": "application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json"
+                        
+        req_headers = {
+            "Accept": "application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json",
+            **headers
         }
         if token:
-            headers["Authorization"] = f"Bearer {token}"
+            req_headers["Authorization"] = f"Bearer {token}"
+            
         manifest_url = f"https://{registry}/v2/{repo}/manifests/{tag}"
-        resp = httpx.get(manifest_url, headers=headers, timeout=10)
+        resp = httpx.get(manifest_url, headers=req_headers, timeout=10)
         if resp.status_code == 200:
             manifest_list_digest = resp.headers.get("Docker-Content-Digest")
             if manifest_list_digest:
@@ -439,16 +458,6 @@ def get_latest_tag(tags, current_tag, strategy):
         return None
     valid_tags.sort(key=parse_version)
     return valid_tags[-1]
-
-
-MONITOR_EXCEPTIONS = (
-    OSError,
-    ValueError,
-    KeyError,
-    TypeError,
-    RuntimeError,
-    ConnectionError,
-)
 
 
 class Monitor:
@@ -504,7 +513,7 @@ class Monitor:
             except MONITOR_EXCEPTIONS as e:
                 print(f"Ignored error: {e}")
 
-        containers = self.client.containers.list(all=True)
+        containers = self.client.containers.list(all=True, size=True)
         log_event(f"Found {len(containers)} containers to evaluate.", "INFO")
         monitor_defaults = self.config.get("containers", {}).get("monitor_defaults", [])
         exclude_updates = (
@@ -593,32 +602,28 @@ class Monitor:
             disk_threshold = int(
                 self.config.get("thresholds", {}).get("disk_space", 80)
             )
+            import shutil
             mounts = c.attrs.get("Mounts", [])
             for m in mounts:
+                source = m.get("Source", "")
                 dest = m.get("Destination", "")
-                if any(x in dest for x in [".sock", "/proc", "/sys", "/dev", "/host/"]):
+                
+                if not source or not source.startswith("/"):
                     continue
+                if any(x in dest for x in [".sock", "/proc", "/sys", "/dev"]):
+                    continue
+                
+                host_path = f"/hostfs{source}"
                 try:
-                    exit_code, output = c.exec_run(["df", "-P", dest])
-                    if exit_code == 0:
-                        lines = output.decode("utf-8").strip().splitlines()
-                        if len(lines) > 1:
-                            parts = lines[1].split()
-                            if len(parts) >= 5:
-                                usage_str = parts[4].replace("%", "")
-                                if (
-                                    usage_str.isdigit()
-                                    and int(usage_str) > disk_threshold
-                                ):
-                                    issues.append(
-                                        f"Disk: High usage ({usage_str}%) at {dest}"
-                                    )
-                                    log_event(
-                                        f"[{name}] Disk usage high ({usage_str}%) at {dest}",
-                                        "WARNING",
-                                    )
+                    if os.path.exists(host_path):
+                        total, used, _ = shutil.disk_usage(host_path)
+                        if total > 0:
+                            usage_pct = int((used / total) * 100)
+                            if usage_pct > disk_threshold:
+                                issues.append(f"Disk: High usage ({usage_pct}%) at {dest}")
+                                log_event(f"[{name}] Disk usage high ({usage_pct}%) at {dest}", "WARNING")
                 except MONITOR_EXCEPTIONS as e:
-                    print(f"Ignored error: {e}")
+                    pass
 
             # Network
             if "stats" in locals() and stats:
@@ -849,19 +854,17 @@ class Monitor:
             )
             for au_name in containers_to_auto_update:
                 try:
-                    inspect = subprocess.run(
-                        [
-                            "docker",
-                            "inspect",
-                            "--format='{{.Config.WorkingDir}}'",
-                            au_name,
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    wdir = inspect.stdout.strip()
-                    fallback_needed = False
+                    try:
+                        labels = (
+                            self.client.containers.get(au_name)
+                            .attrs.get("Config", {})
+                            .get("Labels", {})
+                        )
+                        wdir = labels.get("com.docker.compose.project.working_dir", "")
+                    except MONITOR_EXCEPTIONS:
+                        wdir = ""
+
+                    fallback_needed = not wdir
                     if wdir:
                         try:
                             execute_compose_update(wdir, au_name)
@@ -872,8 +875,6 @@ class Monitor:
                                 "WARNING",
                             )
                             fallback_needed = True
-                    else:
-                        fallback_needed = True
 
                     if fallback_needed:
                         execute_python_update(au_name)
