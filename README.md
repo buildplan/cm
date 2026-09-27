@@ -22,7 +22,7 @@ By default, the application is designed to run behind a Docker Socket Proxy (e.g
 ## Architecture
 
 * **Backend:** FastAPI (Python), APScheduler, Python Docker SDK, and a custom native HTTP OCI registry client.
-* **Frontend:** Single-page app using Vanilla JS, Tailwind CSS, CSS animations, and SSE. No Node.js build tools.
+* **Frontend:** Single-page app using Vanilla JS, Tailwind CSS, CSS animations, and SSE. Tailwind is compiled at build time and Chart.js is vendored, so all assets are served locally with no runtime CDN dependency (works fully offline). No Node.js build tools.
 * **Database:** SQLite (operating in WAL mode) stored in `/app/data/monitor_state.db`.
 
 ---
@@ -51,13 +51,13 @@ services:
     restart: unless-stopped
     environment:
       # Required for basic tracking
-      - CONTAINERS=1 # Allow listing, inspecting, and reading logs
+      - CONTAINERS=1 # Allow listing and inspecting containers
+      - ALLOW_LOGS=1 # Allow reading container logs
       - IMAGES=1     # Allow pulling images and checking digests
       - INFO=1       # Allow 'docker info' for daemon connection checks
 
       # Required for app actions
       - POST=1       # Allow POST operations (Start, Stop, Restart, Pull, Recreate)
-      - EXEC=1       # Allow 'docker exec' for container disk/network stats gathering
       - SYSTEM=1     # Allow 'docker system prune' for the UI cleanup button
 
       # Required for compose recreation

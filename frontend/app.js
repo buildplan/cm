@@ -304,38 +304,47 @@ function customConfirm(title, message) {
 
 let sseSource = null;
 
-function setupSSE() {
+async function setupSSE() {
 	if (sseSource) sseSource.close();
 	const token = localStorage.getItem(TOKEN_KEY) ?? "";
-	sseSource = new EventSource(`/api/events?token=${token}`);
+	try {
+		const res = await fetch("/api/events/ticket", {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (!res.ok) return;
+		const data = await res.json();
+		sseSource = new EventSource(`/api/events?ticket=${data.ticket}`);
 
-	sseSource.onmessage = (event) => {
-		try {
-			const data = JSON.parse(event.data);
-			if (data.type === "state_changed" || data.type === "docker_event") {
-				refreshDashboard();
-			} else if (data.type === "check_completed") {
-				showToast("Monitoring check completed", "success");
-				const btnForce = document.getElementById("force-check-btn");
-				const btnRun = document.getElementById("run-check-btn");
-				if (btnForce?.dataset?.originalHtml) {
-					btnForce.disabled = false;
-					btnForce.innerHTML = btnForce.dataset.originalHtml;
-					btnForce.removeAttribute("data-original-html");
+		sseSource.onmessage = (event) => {
+			try {
+				const data = JSON.parse(event.data);
+				if (data.type === "state_changed" || data.type === "docker_event") {
+					refreshDashboard();
+				} else if (data.type === "check_completed") {
+					showToast("Monitoring check completed", "success");
+					const btnForce = document.getElementById("force-check-btn");
+					const btnRun = document.getElementById("run-check-btn");
+					if (btnForce?.dataset?.originalHtml) {
+						btnForce.disabled = false;
+						btnForce.innerHTML = btnForce.dataset.originalHtml;
+						btnForce.removeAttribute("data-original-html");
+					}
+					if (btnRun?.dataset?.originalHtml) {
+						btnRun.disabled = false;
+						btnRun.innerHTML = btnRun.dataset.originalHtml;
+						btnRun.removeAttribute("data-original-html");
+					}
+					refreshDashboard();
 				}
-				if (btnRun?.dataset?.originalHtml) {
-					btnRun.disabled = false;
-					btnRun.innerHTML = btnRun.dataset.originalHtml;
-					btnRun.removeAttribute("data-original-html");
-				}
-				refreshDashboard();
-			}
-		} catch {}
-	};
+			} catch {}
+		};
 
-	sseSource.onerror = (e) => {
-		console.error("SSE connection error", e);
-	};
+		sseSource.onerror = (e) => {
+			console.error("SSE connection error", e);
+		};
+	} catch (e) {
+		console.error("Failed to get SSE ticket", e);
+	}
 }
 
 async function showApp() {

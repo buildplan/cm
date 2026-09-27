@@ -7,7 +7,6 @@ import subprocess
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
@@ -34,6 +33,7 @@ from webauthn.helpers.structs import (
 from backend.config import AppConfig
 from backend.monitor import Monitor, get_container_logs
 from backend.state import StateManager
+from backend.utils import MONITOR_EXCEPTIONS, log_event
 
 
 class ConfigUpdate(BaseModel):
@@ -61,36 +61,6 @@ STATE_DB = DATA_DIR / "monitor_state.db"
 CONFIG_F = DATA_DIR / "config.yml"
 LOG_F = DATA_DIR / "container-monitor.log"
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "")
-
-
-MONITOR_EXCEPTIONS = (
-    OSError,
-    ValueError,
-    KeyError,
-    TypeError,
-    RuntimeError,
-    ConnectionError,
-)
-
-
-# --- Unified Logging Function ---
-def log_event(msg: str, level="INFO"):
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    log_line = f"{timestamp} [{level}] {msg}\n"
-    try:
-        if LOG_F.exists() and LOG_F.stat().st_size > 10 * 1024 * 1024:
-            with open(LOG_F, "r") as f:
-                f.seek(0, 2)
-                f.seek(max(f.tell() - 1024 * 1024, 0))
-                tail = f.read()
-            with open(LOG_F, "w") as f:
-                f.write(tail[tail.find("\n") + 1 :])
-        with open(LOG_F, "a") as f:
-            f.write(log_line)
-    except MONITOR_EXCEPTIONS as e:
-        print(f"Ignored error: {e}")
-    print(log_line.strip())
-
 
 DEFAULT_CONFIG_TEMPLATE = """# Docker Container Monitor Configuration
 
@@ -238,21 +208,24 @@ async def token_auth(request: Request, call_next):
 
             auth_header = request.headers.get("Authorization", "")
             token = auth_header.removeprefix("Bearer ").strip()
-            if not token:
-                token = request.query_params.get("token", "")
 
             is_valid = False
+            ticket = request.query_params.get("ticket")
+            if request.url.path == "/api/events" and ticket and ticket in sse_tickets:
+                is_valid = True
+                sse_tickets.discard(ticket)
+            elif not token:
+                token = request.query_params.get("token", "")
+
             # Check Token Login
-            if (
+            if not is_valid and (
                 (
                     not disable_token_auth
                     and SECRET_TOKEN
                     and token
                     and secrets.compare_digest(token.encode(), SECRET_TOKEN.encode())
                 )
-                or token
-                and has_passkeys
-                and mgr.is_valid_auth_session(token)
+                or (token and has_passkeys and mgr.is_valid_auth_session(token))
             ):
                 is_valid = True
 
@@ -263,13 +236,25 @@ async def token_auth(request: Request, call_next):
 
 
 sse_clients = set()
+sse_tickets = set()
+
+
+def _safe_put(q: asyncio.Queue, msg: str):
+    try:
+        q.put_nowait(msg)
+    except asyncio.QueueFull:
+        try:
+            q.get_nowait()
+            q.put_nowait(msg)
+        except (asyncio.QueueEmpty, asyncio.QueueFull):
+            pass
 
 
 def broadcast_event(event_type: str, data: dict):
     msg = json.dumps({"type": event_type, "data": data})
     if main_loop and not main_loop.is_closed():
         for q in list(sse_clients):
-            main_loop.call_soon_threadsafe(q.put_nowait, msg)
+            main_loop.call_soon_threadsafe(_safe_put, q, msg)
 
 
 async def event_generator(q: asyncio.Queue):
@@ -283,9 +268,21 @@ async def event_generator(q: asyncio.Queue):
         sse_clients.discard(q)
 
 
+@app.get("/api/events/ticket")
+async def get_sse_ticket(request: Request):
+    import secrets
+
+    ticket = secrets.token_hex(16)
+    sse_tickets.add(ticket)
+    # Expire after 30 seconds if not consumed
+    if main_loop and not main_loop.is_closed():
+        main_loop.call_later(30, lambda: sse_tickets.discard(ticket))
+    return {"ticket": ticket}
+
+
 @app.get("/api/events")
 async def sse_events(request: Request):
-    q = asyncio.Queue()
+    q = asyncio.Queue(maxsize=100)
     sse_clients.add(q)
     return StreamingResponse(event_generator(q), media_type="text/event-stream")
 
@@ -916,6 +913,33 @@ def container_logs(container_name: str, filter: str = ""):
     return {"output": out}
 
 
+def _format_size(b):
+    if b >= 1024**4:
+        return f"{b / 1024**4:.1f}T".replace(".0T", "T")
+    if b >= 1024**3:
+        return f"{b / 1024**3:.1f}G".replace(".0G", "G")
+    if b >= 1024**2:
+        return f"{b / 1024**2:.1f}M".replace(".0M", "M")
+    return f"{b / 1024:.1f}K".replace(".0K", "K")
+
+
+def _read_meminfo():
+    values = {}
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                key, _, rest = line.partition(":")
+                if not rest:
+                    continue
+                try:
+                    values[key] = int(rest.split()[0])
+                except ValueError:
+                    continue
+    except OSError:
+        pass
+    return values
+
+
 @app.get("/api/host-stats")
 def get_host_stats():
     fs = "/hostfs"
@@ -933,46 +957,31 @@ def get_host_stats():
         total, used, _free = shutil.disk_usage(fs)
         if total > 0:
             percent = int((used / total) * 100)
-
-            def format_size(b):
-                if b >= 1024**4:
-                    return f"{b / 1024**4:.1f}T".replace(".0T", "T")
-                elif b >= 1024**3:
-                    return f"{b / 1024**3:.1f}G".replace(".0G", "G")
-                elif b >= 1024**2:
-                    return f"{b / 1024**2:.1f}M".replace(".0M", "M")
-                else:
-                    return f"{b / 1024:.1f}K".replace(".0K", "K")
-
-            disk_info["size"] = format_size(total)
-            disk_info["used"] = format_size(used)
+            disk_info["size"] = _format_size(total)
+            disk_info["used"] = _format_size(used)
             disk_info["percent"] = f"{percent}%"
     except MONITOR_EXCEPTIONS as e:
         print(f"Ignored error: {e}")
+
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
     try:
-        mem_cmd = subprocess.run(
-            ["free", "-m"], capture_output=True, text=True, check=False
+        mem = _read_meminfo()
+        total_kb = mem.get("MemTotal", 0)
+        used_kb = max(
+            total_kb
+            - mem.get("MemFree", 0)
+            - mem.get("Buffers", 0)
+            - mem.get("Cached", 0)
+            - mem.get("SReclaimable", 0),
+            0,
         )
-        mem_lines = mem_cmd.stdout.strip().split("\n")
-        if len(mem_lines) > 1:
-            parts = mem_lines[1].split()
-            if len(parts) >= 3:
-                total = int(parts[1])
-                used = int(parts[2])
-                percent = int((used / total) * 100) if total > 0 else 0
-                if total >= 1024:
-                    mem_info = {
-                        "total": f"{total / 1024:.1f}GB".replace(".0GB", "GB"),
-                        "used": f"{used / 1024:.1f}GB".replace(".0GB", "GB"),
-                        "percent": f"{percent}%",
-                    }
-                else:
-                    mem_info = {
-                        "total": f"{total}MB",
-                        "used": f"{used}MB",
-                        "percent": f"{percent}%",
-                    }
+        if total_kb > 0:
+            percent = int((used_kb / total_kb) * 100)
+            mem_info = {
+                "total": _format_size(total_kb * 1024),
+                "used": _format_size(used_kb * 1024),
+                "percent": f"{percent}%",
+            }
     except MONITOR_EXCEPTIONS as e:
         print(f"Ignored error: {e}")
     cpu_load = "0.00"
