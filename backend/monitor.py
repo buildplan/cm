@@ -303,18 +303,27 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
 def get_docker_auth(registry):
     import json
 
-    config_path = Path("/root/.docker/config.json")
-    if not config_path.exists():
+    paths = [Path("/root/.docker/config.json"), Path.home() / ".docker" / "config.json"]
+    config_path = next((p for p in paths if p.exists()), None)
+    if not config_path:
         return None
     try:
         with open(config_path, "r") as f:
             cfg = json.load(f)
             auths = cfg.get("auths", {})
+
+            check_regs = [registry]
+            if registry == "registry-1.docker.io":
+                check_regs.extend(
+                    ["https://index.docker.io/v1/", "docker.io", "index.docker.io"]
+                )
+
             for reg, auth_data in auths.items():
-                if registry in reg or reg in registry:
-                    auth = auth_data.get("auth")
-                    if auth:
-                        return f"Basic {auth}"
+                for check_reg in check_regs:
+                    if check_reg in reg or reg in check_reg:
+                        auth = auth_data.get("auth")
+                        if auth:
+                            return f"Basic {auth}"
     except Exception as e:  # noqa: BLE001
         log_event(f"Failed to read docker config: {e}", "WARNING")
     return None
