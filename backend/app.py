@@ -208,7 +208,7 @@ async def token_auth(request: Request, call_next):
 
             auth_header = request.headers.get("Authorization", "")
             token = auth_header.removeprefix("Bearer ").strip()
-            
+
             is_valid = False
             ticket = request.query_params.get("ticket")
             if request.url.path == "/api/events" and ticket and ticket in sse_tickets:
@@ -225,11 +225,7 @@ async def token_auth(request: Request, call_next):
                     and token
                     and secrets.compare_digest(token.encode(), SECRET_TOKEN.encode())
                 )
-                or (
-                    token
-                    and has_passkeys
-                    and mgr.is_valid_auth_session(token)
-                )
+                or (token and has_passkeys and mgr.is_valid_auth_session(token))
             ):
                 is_valid = True
 
@@ -253,6 +249,7 @@ def _safe_put(q: asyncio.Queue, msg: str):
         except (asyncio.QueueEmpty, asyncio.QueueFull):
             pass
 
+
 def broadcast_event(event_type: str, data: dict):
     msg = json.dumps({"type": event_type, "data": data})
     if main_loop and not main_loop.is_closed():
@@ -274,6 +271,7 @@ async def event_generator(q: asyncio.Queue):
 @app.get("/api/events/ticket")
 async def get_sse_ticket(request: Request):
     import secrets
+
     ticket = secrets.token_hex(16)
     sse_tickets.add(ticket)
     # Expire after 30 seconds if not consumed

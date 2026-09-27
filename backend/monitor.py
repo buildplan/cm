@@ -302,6 +302,7 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
 
 def get_docker_auth(registry):
     import json
+
     config_path = Path("/root/.docker/config.json")
     if not config_path.exists():
         return None
@@ -337,7 +338,7 @@ def get_registry_tags(image_name):
         headers = {}
         if basic_auth:
             headers["Authorization"] = basic_auth
-            
+
         r = httpx.get(url, headers=headers, timeout=10)
         token = ""
         if r.status_code == 401:
@@ -353,11 +354,11 @@ def get_registry_tags(image_name):
                     tr = httpx.get(auth_url, headers=tr_headers, timeout=10)
                     if tr.status_code == 200:
                         token = tr.json().get("token") or tr.json().get("access_token")
-                        
+
         req_headers = {**headers}
         if token:
             req_headers["Authorization"] = f"Bearer {token}"
-            
+
         tags_url = f"https://{registry}/v2/{repo}/tags/list"
         resp = httpx.get(tags_url, headers=req_headers, timeout=10)
         if resp.status_code == 200:
@@ -389,7 +390,7 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
         headers = {}
         if basic_auth:
             headers["Authorization"] = basic_auth
-            
+
         r = httpx.get(url, headers=headers, timeout=10)
         token = ""
         if r.status_code == 401:
@@ -405,14 +406,14 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
                     tr = httpx.get(auth_url, headers=tr_headers, timeout=10)
                     if tr.status_code == 200:
                         token = tr.json().get("token") or tr.json().get("access_token")
-                        
+
         req_headers = {
             "Accept": "application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json",
-            **headers
+            **headers,
         }
         if token:
             req_headers["Authorization"] = f"Bearer {token}"
-            
+
         manifest_url = f"https://{registry}/v2/{repo}/manifests/{tag}"
         resp = httpx.get(manifest_url, headers=req_headers, timeout=10)
         if resp.status_code == 200:
@@ -602,16 +603,17 @@ class Monitor:
                 self.config.get("thresholds", {}).get("disk_space", 80)
             )
             import shutil
+
             mounts = c.attrs.get("Mounts", [])
             for m in mounts:
                 source = m.get("Source", "")
                 dest = m.get("Destination", "")
-                
+
                 if not source or not source.startswith("/"):
                     continue
                 if any(x in dest for x in [".sock", "/proc", "/sys", "/dev"]):
                     continue
-                
+
                 host_path = f"/hostfs{source}"
                 try:
                     if os.path.exists(host_path):
@@ -619,8 +621,13 @@ class Monitor:
                         if total > 0:
                             usage_pct = int((used / total) * 100)
                             if usage_pct > disk_threshold:
-                                issues.append(f"Disk: High usage ({usage_pct}%) at {dest}")
-                                log_event(f"[{name}] Disk usage high ({usage_pct}%) at {dest}", "WARNING")
+                                issues.append(
+                                    f"Disk: High usage ({usage_pct}%) at {dest}"
+                                )
+                                log_event(
+                                    f"[{name}] Disk usage high ({usage_pct}%) at {dest}",
+                                    "WARNING",
+                                )
                 except MONITOR_EXCEPTIONS:
                     pass
 

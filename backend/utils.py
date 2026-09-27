@@ -14,6 +14,7 @@ MONITOR_EXCEPTIONS = (
     ConnectionError,
 )
 
+
 def log_event(msg: str, level="INFO"):
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
