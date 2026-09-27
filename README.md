@@ -57,7 +57,6 @@ services:
 
       # Required for app actions
       - POST=1       # Allow POST operations (Start, Stop, Restart, Pull, Recreate)
-      - EXEC=1       # Allow 'docker exec' for container disk/network stats gathering
       - SYSTEM=1     # Allow 'docker system prune' for the UI cleanup button
 
       # Required for compose recreation

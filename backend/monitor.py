@@ -575,15 +575,14 @@ class Monitor:
                 ) - stats.get("precpu_stats", {}).get("system_cpu_usage", 0)
                 cpu_percent = 0.0
                 if system_delta > 0 and cpu_delta > 0:
-                    cpu_percent = (
-                        (cpu_delta / system_delta)
-                        * len(
+                    online_cpus = stats["cpu_stats"].get("online_cpus")
+                    if online_cpus is None:
+                        online_cpus = len(
                             stats["cpu_stats"]
                             .get("cpu_usage", {})
                             .get("percpu_usage", [1])
                         )
-                        * 100.0
-                    )
+                    cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
 
                 mem_usage = stats["memory_stats"].get("usage", 0)
                 mem_limit = stats["memory_stats"].get("limit", 1)
