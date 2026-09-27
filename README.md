@@ -51,7 +51,8 @@ services:
     restart: unless-stopped
     environment:
       # Required for basic tracking
-      - CONTAINERS=1 # Allow listing, inspecting, and reading logs
+      - CONTAINERS=1 # Allow listing and inspecting containers
+      - ALLOW_LOGS=1 # Allow reading container logs
       - IMAGES=1     # Allow pulling images and checking digests
       - INFO=1       # Allow 'docker info' for daemon connection checks
 
