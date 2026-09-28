@@ -12,12 +12,18 @@ RUN python3 -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
 
+COPY requirements.txt /tmp/requirements.txt
+
 # hadolint ignore=DL3013,DL3059
-RUN pip3 install --no-cache-dir --compile fastapi uvicorn apscheduler pyyaml docker httpx webauthn
+RUN pip3 install --no-cache-dir --compile -r /tmp/requirements.txt
 
 # hadolint ignore=DL3059
 RUN pip3 uninstall -y pip setuptools \
-    && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    && find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/venv -type d -name "test" -exec rm -rf {} + 2>/dev/null || true \
+    && find /opt/venv -type f -name "*.pyc" -delete \
+    && find /opt/venv -type f -name "*.pyo" -delete
 
 # 1.5: Frontend Asset Builder (Tailwind CSS + Chart.js)
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS frontend
@@ -43,8 +49,11 @@ WORKDIR /app
 
 COPY frontend/ ./frontend/
 
+ARG APP_VERSION=dev
+
 # hadolint ignore=DL3059
-RUN /tmp/tailwindcss -i ./frontend/app.css -o ./frontend/styles.css --minify
+RUN sed -i "s/const APP_VERSION = .*/const APP_VERSION = \"${APP_VERSION}\";/" ./frontend/app.js \
+    && /tmp/tailwindcss -i ./frontend/app.css -o ./frontend/styles.css --minify
 
 # renovate: datasource=npm depName=chart.js
 ARG CHARTJS_VERSION=4.5.1
@@ -68,15 +77,10 @@ COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 
 COPY backend/ ./backend/
-COPY frontend/index.html frontend/app.js ./frontend/
-COPY --from=frontend /app/frontend/styles.css ./frontend/styles.css
-COPY --from=frontend /app/frontend/chart.umd.min.js ./frontend/chart.umd.min.js
-
-ARG APP_VERSION=dev
+COPY --from=frontend /app/frontend ./frontend
 
 # hadolint ignore=DL3059
-RUN sed -i "s/const APP_VERSION = .*/const APP_VERSION = \"${APP_VERSION}\";/" /app/frontend/app.js && \
-    mkdir -p /app/data
+RUN mkdir -p /app/data
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD ["python3", "-c", "import sys, urllib.request; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:9000/health', timeout=8).getcode() == 200 else sys.exit(1)"]
