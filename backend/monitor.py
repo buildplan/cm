@@ -522,7 +522,7 @@ class Monitor:
             except MONITOR_EXCEPTIONS as e:
                 print(f"Ignored error: {e}")
 
-        containers = self.client.containers.list(all=True, size=True)
+        containers = self.client.containers.list(all=True)
         log_event(f"Found {len(containers)} containers to evaluate.", "INFO")
         monitor_defaults = self.config.get("containers", {}).get("monitor_defaults", [])
         exclude_updates = (
@@ -878,8 +878,19 @@ class Monitor:
                     except MONITOR_EXCEPTIONS:
                         wdir = ""
 
-                    fallback_needed = not wdir
-                    if wdir:
+                    wdir = wdir.strip().strip("'").strip('"')
+                    if not wdir or wdir == "/":
+                        c_files = labels.get(
+                            "com.docker.compose.project.config_files", ""
+                        )
+                        if c_files:
+                            first_file = (
+                                c_files.split(",")[0].strip().strip("'").strip('"')
+                            )
+                            wdir = os.path.dirname(first_file)
+
+                    fallback_needed = not wdir or wdir == "/"
+                    if not fallback_needed:
                         try:
                             execute_compose_update(wdir, au_name)
                             log_event(f"Successfully auto-updated {au_name}", "GOOD")
