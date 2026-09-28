@@ -24,6 +24,20 @@ data/
 # IDE & OS
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Caches & Temp
+.ruff_cache/
+.pytest_cache/
+.coverage
+scratch/
+tmp/
 
 # Project Files
 README.md
