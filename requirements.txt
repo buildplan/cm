@@ -1,0 +1,7 @@
+fastapi==0.141.1
+uvicorn==0.54.0
+apscheduler==3.11.3
+pyyaml==6.0.3
+docker==7.2.0
+httpx==0.28.1
+webauthn==3.0.1

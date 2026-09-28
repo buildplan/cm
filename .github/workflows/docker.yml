@@ -2,7 +2,7 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "dev-*" ]
     tags: [ "v*.*.*" ]
     paths-ignore:
       - 'docker-compose.yml'
@@ -48,6 +48,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=ref,event=branch
             type=semver,pattern={{version}}
 
       - name: Build and push Docker image
