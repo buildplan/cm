@@ -740,26 +740,35 @@ async def update_container(container_name: str):
     log_event(f"Pull & Recreate requested for container: {container_name}", "API")
 
     def _run_inspect():
-        return subprocess.run(
+        res = subprocess.run(
             [
                 "docker",
                 "inspect",
                 "--format",
-                '{{index .Config.Labels "com.docker.compose.project.working_dir"}}',
+                '{{index .Config.Labels "com.docker.compose.project.working_dir"}}|{{index .Config.Labels "com.docker.compose.project.config_files"}}',
                 container_name,
             ],
             capture_output=True,
             text=True,
             check=False,
         )
+        return res.stdout.strip()
 
     inspect = await asyncio.to_thread(_run_inspect)
-    working_dir = inspect.stdout.strip()
+    parts = inspect.split("|", 1)
+    working_dir = parts[0].strip().strip("'").strip('"')
+    if (not working_dir or working_dir == "/") and len(parts) > 1 and parts[1].strip():
+        c_files = parts[1].strip()
+        if c_files and "<no value>" not in c_files:
+            import os
+
+            first_file = c_files.split(",")[0].strip().strip("'").strip('"')
+            working_dir = os.path.dirname(first_file)
     from backend.monitor import execute_compose_update, execute_python_update
 
     fallback_needed = False
     output = ""
-    if working_dir:
+    if working_dir and working_dir != "/":
         try:
             output = await asyncio.to_thread(
                 execute_compose_update, working_dir, container_name
