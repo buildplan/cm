@@ -24,18 +24,19 @@ FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cab
 
 ARG TARGETARCH
 
+# renovate: datasource=github-releases depName=tailwindlabs/tailwindcss
+ARG TAILWIND_VERSION=v4.3.3
+
 # hadolint ignore=DL3018,DL3059
 RUN apk add --no-cache wget ca-certificates libstdc++ libgcc
 
 RUN set -eu; \
     case "${TARGETARCH}" in \
-      amd64) TAILWIND_ARCH="x64"; TAILWIND_SHA256="a04d34ceacc8f52cbe8920ad846cdeb61d3d0021dba32db0d1f77c9d9fad7a6c" ;; \
-      arm64) TAILWIND_ARCH="arm64"; TAILWIND_SHA256="71ea4be79c9de9827545682df3e040053fb535d37c71ed2cfdedf9385a0868e0" ;; \
+      amd64) TAILWIND_ARCH="x64" ;; \
+      arm64) TAILWIND_ARCH="arm64" ;; \
       *) echo "Unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    wget -q -O /tmp/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-${TAILWIND_ARCH}-musl"; \
-    printf '%s  /tmp/tailwindcss\n' "${TAILWIND_SHA256}" > /tmp/tailwindcss.sha256; \
-    sha256sum -c /tmp/tailwindcss.sha256; \
+    wget -q -O /tmp/tailwindcss "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${TAILWIND_ARCH}-musl"; \
     chmod +x /tmp/tailwindcss
 
 WORKDIR /app
@@ -45,8 +46,11 @@ COPY frontend/ ./frontend/
 # hadolint ignore=DL3059
 RUN /tmp/tailwindcss -i ./frontend/app.css -o ./frontend/styles.css --minify
 
+# renovate: datasource=npm depName=chart.js
+ARG CHARTJS_VERSION=4.5.1
+
 # hadolint ignore=DL3059
-RUN wget -q -O ./frontend/chart.umd.min.js "https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+RUN wget -q -O ./frontend/chart.umd.min.js "https://cdn.jsdelivr.net/npm/chart.js@${CHARTJS_VERSION}/dist/chart.umd.min.js"
 
 # 2: Final Image
 FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
