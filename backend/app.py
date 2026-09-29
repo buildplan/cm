@@ -300,7 +300,7 @@ async def scheduled_run():
     try:
         monitor = Monitor(on_update=broadcast_event)
         await asyncio.to_thread(monitor.run)
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         log_event(f"Scheduled run failed: {e}", "ERROR")
 
 
@@ -334,7 +334,7 @@ async def docker_event_listener():
                             )
                             for q in list(sse_clients):
                                 loop.call_soon_threadsafe(q.put_nowait, msg)
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 loop.call_soon_threadsafe(
                     log_event,
                     f"Docker event listener disconnected: {e}. Retrying in 5 seconds...",
@@ -344,7 +344,7 @@ async def docker_event_listener():
 
     try:
         await asyncio.to_thread(listen_events)
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         log_event(f"Docker event listener thread failed: {e}", "ERROR")
 
 
@@ -365,7 +365,7 @@ async def startup():
                 ]
 
             discovered_containers = await asyncio.to_thread(fetch_names)
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Failed to auto-discover containers: {e}")
             discovered_containers = []
 
@@ -607,7 +607,7 @@ async def register_verify(request: Request):
             expected_rp_id=rp_id,
             expected_origin=origin,
         )
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
 
     mgr = StateManager(STATE_DB)
@@ -671,7 +671,7 @@ async def login_verify(request: Request):
             credential_public_key=base64.b64decode(cred_match["public_key"]),
             credential_current_sign_count=cred_match["sign_count"],
         )
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
 
     mgr.update_webauthn_sign_count(cred_match["id"], verification.new_sign_count)
@@ -710,7 +710,7 @@ async def get_containers():
             return res
 
         return await asyncio.to_thread(fetch)
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         log_event(f"Error fetching containers: {e}", "ERROR")
         return []
 
@@ -730,7 +730,7 @@ async def trigger_run(background_tasks: BackgroundTasks, force: bool = False):
         try:
             monitor = Monitor(force=force, on_update=broadcast_event)
             monitor.run()
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             log_event(f"Manual monitor check failed: {e}", "ERROR")
         finally:
             _check_running = False
@@ -783,7 +783,7 @@ async def update_container(container_name: str):
             output = await asyncio.to_thread(
                 execute_compose_update, working_dir, container_name
             )
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             log_event(
                 f"Compose update failed for {container_name}: {e}. Falling back to native SDK update.",
                 "WARNING",
@@ -795,7 +795,7 @@ async def update_container(container_name: str):
     if fallback_needed:
         try:
             output = await asyncio.to_thread(execute_python_update, container_name)
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             log_event(f"Update failed for {container_name}: {e}", "ERROR")
             return {"exit_code": 1, "output": str(e), "error": str(e)}
 
@@ -859,7 +859,7 @@ def get_config():
     try:
         with open(CONFIG_F, "r") as f:
             return PlainTextResponse(f.read())
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -868,7 +868,7 @@ def get_config_json():
     try:
         with open(CONFIG_F, "r") as f:
             return yaml.safe_load(f)
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -983,7 +983,7 @@ def get_host_stats():
             disk_info["size"] = _format_size(total)
             disk_info["used"] = _format_size(used)
             disk_info["percent"] = f"{percent}%"
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
 
     mem_info = {"percent": "0%", "total": "0MB", "used": "0MB"}
@@ -1005,13 +1005,13 @@ def get_host_stats():
                 "used": _format_size(used_kb * 1024),
                 "percent": f"{percent}%",
             }
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
     cpu_load = "0.00"
     try:
         with open("/proc/loadavg", "r") as f:
             cpu_load = f.read().split()[0]
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
     return {"disk": disk_info, "memory": mem_info, "cpu_load": cpu_load}
 

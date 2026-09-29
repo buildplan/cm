@@ -87,7 +87,7 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Pulling latest image: {image_ref}...", "INFO")
     try:
         client.images.pull(image_ref)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001  # noqa: BLE001
         raise RuntimeError(f"Failed to pull image: {e}")
 
     config = attrs["Config"]
@@ -239,7 +239,7 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Stopping old container...", "INFO")
     try:
         container.stop(timeout=15)
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         log_event(
             f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG"
         )
@@ -265,14 +265,14 @@ def execute_python_update(container_name: str):
                             f"[{container_name}] Connected to additional network: {net_name}",
                             "DEBUG",
                         )
-                    except MONITOR_EXCEPTIONS as e:
+                    except Exception as e:  # noqa: BLE001
                         log_event(
                             f"[{container_name}] Failed to connect to network {net_name}: {e}",
                             "WARNING",
                         )
 
         return f"Successfully recreated {container_name} via native Python SDK."
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:
         log_event(f"[{container_name}] Recreation failed: {e}", "ERROR")
         raise
 
@@ -287,7 +287,7 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 with open(CONFIG_F, "r") as f:
                     cfg = yaml.safe_load(f) or {}
                     lines = int(cfg.get("general", {}).get("log_lines_to_check", 20))
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
         logs = container.logs(tail=lines).decode("utf-8", errors="replace")
         if filter_str:
@@ -296,7 +296,7 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 [line for line in logs.splitlines() if pattern.search(line)]
             )
         return logs
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         return f"Error fetching logs: {e}"
 
 
@@ -366,7 +366,7 @@ def get_docker_auth(registry, auth_cfg=None):
                         auth = auth_data.get("auth")
                         if auth:
                             return f"Basic {auth}"
-    except Exception as e:  # noqa: BLE001  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001  # noqa: BLE001  # noqa: BLE001
         log_event(f"Failed to read docker config: {e}", "WARNING")
     return None
 
@@ -414,7 +414,7 @@ def get_registry_tags(image_name, auth_cfg=None):
         resp = httpx.get(tags_url, headers=req_headers, timeout=10)
         if resp.status_code == 200:
             return resp.json().get("tags", [])
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
     return []
 
@@ -481,7 +481,7 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux", auth_cf
                         and plat.get("os") == os_name
                     ) and m.get("digest"):
                         digests.add(m.get("digest"))
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
     return list(digests)
 
@@ -520,7 +520,7 @@ class Monitor:
                 self.config = yaml.safe_load(f) or {}
         try:
             self.client = docker.from_env()
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             self.client = None
             log_event(f"Docker connection failed: {e}", "ERROR")
 
@@ -543,7 +543,7 @@ class Monitor:
             self.state_mgr.update(self.state)
             if self.on_update:
                 self.on_update("state_changed", self.state)
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             log_event(f"Failed to save state: {e}", "ERROR")
 
     def run(self):
@@ -561,7 +561,7 @@ class Monitor:
         if hc_url:
             try:
                 httpx.get(f"{hc_url.rstrip('/')}/start", timeout=5)
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
         containers = self.client.containers.list(all=True)
@@ -645,7 +645,7 @@ class Monitor:
                     log_event(
                         f"[{name}] Memory usage high: {mem_percent:.1f}%", "WARNING"
                     )
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
             # Disk Space
@@ -701,7 +701,7 @@ class Monitor:
                                 f"[{name}] Network issues: {errors} errors/drops on {iface}",
                                 "WARNING",
                             )
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
 
             # Logs
@@ -729,7 +729,7 @@ class Monitor:
                 if has_error:
                     issues.append("Logs: Errors detected")
                     log_event(f"[{name}] Log errors detected.", "WARNING")
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
             # Updates
@@ -895,7 +895,7 @@ class Monitor:
                                         "timestamp": int(time.time()),
                                     },
                                 }
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
             if issues:
@@ -943,7 +943,7 @@ class Monitor:
                         try:
                             execute_compose_update(wdir, au_name)
                             log_event(f"Successfully auto-updated {au_name}", "GOOD")
-                        except MONITOR_EXCEPTIONS as e:
+                        except Exception as e:  # noqa: BLE001
                             log_event(
                                 f"Compose auto-update failed for {au_name}: {e}. Falling back to native SDK update.",
                                 "WARNING",
@@ -956,7 +956,7 @@ class Monitor:
                             f"Successfully auto-updated {au_name} using native Python SDK",
                             "GOOD",
                         )
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 
         if hc_url:
@@ -979,7 +979,7 @@ class Monitor:
                     httpx.post(f"{hc_url.rstrip('/')}/fail", data=msg, timeout=5)
                 else:
                     httpx.post(f"{hc_url.rstrip('/')}", data="OK", timeout=5)
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
         if issues_found:
@@ -1016,7 +1016,7 @@ class Monitor:
                             ],
                         },
                     )
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
         elif channel == "ntfy":
             url = self.config.get("notifications", {}).get("ntfy", {}).get("server_url")
@@ -1030,7 +1030,7 @@ class Monitor:
                     headers["Authorization"] = f"Bearer {token}"
                 try:
                     httpx.post(f"{url}/{topic}", headers=headers, content=msg)
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
         elif channel == "generic":
             url = (
@@ -1041,5 +1041,5 @@ class Monitor:
             if url:
                 try:
                     httpx.post(url, json={"text": f"{title}: {msg}"})
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
