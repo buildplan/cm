@@ -23,6 +23,7 @@ docker-compose-*
 .DS_Store
 Thumbs.db
 *.bak
+bash-script-version/
 
 # Antigravity
 .antigravitycli/

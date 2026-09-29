@@ -33,7 +33,7 @@ from webauthn.helpers.structs import (
 from backend.config import AppConfig
 from backend.monitor import Monitor, get_container_logs
 from backend.state import StateManager
-from backend.utils import MONITOR_EXCEPTIONS, log_event
+from backend.utils import MONITOR_EXCEPTIONS, log_event, set_log_max_size
 
 
 class ConfigUpdate(BaseModel):
@@ -68,6 +68,8 @@ general:
   monitor_interval_minutes: __INTERVAL_MINS__
   log_lines_to_check: __LOG_LINES__
   log_file: "/app/data/container-monitor.log"
+  log_max_size_mb: 5
+  os_override: ""
   update_check_cache_hours: __CACHE_HOURS__
   lock_timeout_seconds: __LOCK_TIMEOUT__
   healthchecks_job_url: "__HC_URL__"
@@ -86,6 +88,7 @@ __ERROR_PATTERNS__
 auth:
   docker_username: "__DOCKER_USER__"
   docker_password: "__DOCKER_PASS__"
+  registries: {}
   docker_config_path: "~/.docker/config.json"
 
 thresholds:
@@ -503,6 +506,7 @@ async def startup():
 
         cfg = await asyncio.to_thread(_read_cfg)
         interval_mins = int(cfg.get("general", {}).get("monitor_interval_minutes", 360))
+        set_log_max_size(int(cfg.get("general", {}).get("log_max_size_mb", 5)))
     except MONITOR_EXCEPTIONS:
         interval_mins = 360
 
@@ -879,6 +883,7 @@ async def update_config(request: Request):
         new_interval = int(
             parsed_yaml.get("general", {}).get("monitor_interval_minutes", 360)
         )
+        set_log_max_size(int(parsed_yaml.get("general", {}).get("log_max_size_mb", 5)))
         scheduler.reschedule_job(
             "monitor", trigger=IntervalTrigger(minutes=new_interval)
         )
@@ -904,6 +909,7 @@ async def update_config_json(request: Request):
         await asyncio.to_thread(_write_cfg_data)
 
         new_interval = int(data.get("general", {}).get("monitor_interval_minutes", 360))
+        set_log_max_size(int(data.get("general", {}).get("log_max_size_mb", 5)))
         scheduler.reschedule_job(
             "monitor", trigger=IntervalTrigger(minutes=new_interval)
         )

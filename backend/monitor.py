@@ -300,23 +300,65 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
         return f"Error fetching logs: {e}"
 
 
-def get_docker_auth(registry):
+def get_docker_auth(registry, auth_cfg=None):
+    if auth_cfg is None:
+        auth_cfg = {}
+
+    import base64
     import json
 
-    paths = [Path("/root/.docker/config.json"), Path.home() / ".docker" / "config.json"]
-    config_path = next((p for p in paths if p.exists()), None)
+    # 1. Check per-registry credentials in config
+    registries = auth_cfg.get("registries", {})
+    if registry in registries:
+        user = registries[registry].get("username", "")
+        pwd = registries[registry].get("password", "")
+        if user and pwd:
+            auth_bytes = f"{user}:{pwd}".encode()
+            return f"Basic {base64.b64encode(auth_bytes).decode('utf-8')}"
+
+    check_regs = [registry]
+    if registry == "registry-1.docker.io":
+        check_regs.extend(
+            ["https://index.docker.io/v1/", "docker.io", "index.docker.io"]
+        )
+
+    for check_reg in check_regs:
+        if check_reg in registries:
+            user = registries[check_reg].get("username", "")
+            pwd = registries[check_reg].get("password", "")
+            if user and pwd:
+                auth_bytes = f"{user}:{pwd}".encode()
+                return f"Basic {base64.b64encode(auth_bytes).decode('utf-8')}"
+
+    # 2. Check global fallback in config
+    global_user = auth_cfg.get("docker_username", "")
+    global_pwd = auth_cfg.get("docker_password", "")
+    if global_user and global_pwd:
+        auth_bytes = f"{global_user}:{global_pwd}".encode()
+        return f"Basic {base64.b64encode(auth_bytes).decode('utf-8')}"
+
+    # 3. Check docker config file
+    config_path_str = auth_cfg.get("docker_config_path", "~/.docker/config.json")
+    config_path = None
+    if config_path_str:
+        config_path = Path(config_path_str).expanduser()
+        if not config_path.exists():
+            config_path = None
+
+    if not config_path:
+        paths = [
+            Path("/root/.docker/config.json"),
+            Path.home() / ".docker" / "config.json",
+        ]
+        config_path = next((p for p in paths if p.exists()), None)
+
     if not config_path:
         return None
+
     try:
         with open(config_path, "r") as f:
             cfg = json.load(f)
             auths = cfg.get("auths", {})
-
-            check_regs = [registry]
-            if registry == "registry-1.docker.io":
-                check_regs.extend(
-                    ["https://index.docker.io/v1/", "docker.io", "index.docker.io"]
-                )
 
             for reg, auth_data in auths.items():
                 for check_reg in check_regs:
@@ -329,7 +371,7 @@ def get_docker_auth(registry):
     return None
 
 
-def get_registry_tags(image_name):
+def get_registry_tags(image_name, auth_cfg=None):
     if ":" in image_name:
         image_name = image_name.split(":")[0]
     registry = "registry-1.docker.io"
@@ -343,7 +385,7 @@ def get_registry_tags(image_name):
         repo = f"library/{image_name}"
     url = f"https://{registry}/v2/"
     try:
-        basic_auth = get_docker_auth(registry)
+        basic_auth = get_docker_auth(registry, auth_cfg)
         headers = {}
         if basic_auth:
             headers["Authorization"] = basic_auth
@@ -377,7 +419,7 @@ def get_registry_tags(image_name):
     return []
 
 
-def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
+def get_remote_digests(image_ref, architecture="amd64", os_name="linux", auth_cfg=None):
     if ":" in image_ref:
         image_name, tag = image_ref.rsplit(":", 1)
     else:
@@ -395,7 +437,7 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
     url = f"https://{registry}/v2/"
     digests = set()
     try:
-        basic_auth = get_docker_auth(registry)
+        basic_auth = get_docker_auth(registry, auth_cfg)
         headers = {}
         if basic_auth:
             headers["Authorization"] = basic_auth
@@ -735,7 +777,9 @@ class Monitor:
                                 f"[{name}] Checking remote tags for {image_ref} (Strategy: {strategy})",
                                 "DEBUG",
                             )
-                            tags = get_registry_tags(image_ref)
+                            tags = get_registry_tags(
+                                image_ref, self.config.get("auth", {})
+                            )
                             latest = get_latest_tag(tags, current_tag, strategy)
                             if (
                                 latest
@@ -779,7 +823,9 @@ class Monitor:
                                 "DEBUG",
                             )
                             local_arch = c.image.attrs.get("Architecture", "amd64")
-                            local_os = c.image.attrs.get("Os", "linux")
+                            local_os = self.config.get("general", {}).get(
+                                "os_override"
+                            ) or c.image.attrs.get("Os", "linux")
 
                             local_digests = []
                             repo_digests = c.image.attrs.get("RepoDigests", [])
@@ -801,7 +847,10 @@ class Monitor:
                                 remote_digests.append(remote_digest)
 
                             http_digests = get_remote_digests(
-                                image_ref, local_arch, local_os
+                                image_ref,
+                                local_arch,
+                                local_os,
+                                self.config.get("auth", {}),
                             )
                             if http_digests:
                                 remote_digests.extend(http_digests)

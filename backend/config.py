@@ -5,6 +5,8 @@ class GeneralConfig(BaseModel):
     monitor_interval_minutes: int = 360
     log_lines_to_check: int = 40
     log_file: str = "/app/data/container-monitor.log"
+    log_max_size_mb: int = 5
+    os_override: str = ""
     update_check_cache_hours: int = 6
     lock_timeout_seconds: int = 30
     healthchecks_job_url: str = ""
@@ -17,9 +19,15 @@ class LogsConfig(BaseModel):
     ignore_patterns: dict[str, list[str]] = {}
 
 
+class RegistryAuth(BaseModel):
+    username: str = ""
+    password: str = ""
+
+
 class AuthConfig(BaseModel):
     docker_username: str = ""
     docker_password: str = ""
+    registries: dict[str, RegistryAuth] = {}
     docker_config_path: str = "~/.docker/config.json"
     disable_token_auth: bool = False
 
