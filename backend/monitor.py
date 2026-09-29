@@ -21,11 +21,29 @@ def execute_compose_update(working_dir: str, container_name: str):
     import os
 
     client = docker.from_env()
+    container = client.containers.get(container_name)
+    labels = container.attrs.get("Config", {}).get("Labels", {})
+    project_name = labels.get("com.docker.compose.project")
+    service_name = labels.get("com.docker.compose.service")
+
+    cmd_pull = ["docker", "compose"]
+    if project_name:
+        cmd_pull.extend(["-p", project_name])
+    cmd_pull.append("pull")
+    if service_name:
+        cmd_pull.append(service_name)
+
+    cmd_up = ["docker", "compose"]
+    if project_name:
+        cmd_up.extend(["-p", project_name])
+    cmd_up.extend(["up", "-d", "--force-recreate"])
+    if service_name:
+        cmd_up.append(service_name)
 
     if Path(working_dir).is_dir():
         # Fast path: directory is mounted locally in this container
         pull_res = subprocess.run(
-            ["docker", "compose", "pull"],
+            cmd_pull,
             cwd=working_dir,
             capture_output=True,
             text=True,
@@ -34,7 +52,7 @@ def execute_compose_update(working_dir: str, container_name: str):
         if pull_res.returncode != 0:
             raise RuntimeError(f"Pull failed: {pull_res.stderr}")
         up_res = subprocess.run(
-            ["docker", "compose", "up", "-d", "--force-recreate"],
+            cmd_up,
             cwd=working_dir,
             capture_output=True,
             text=True,
@@ -44,8 +62,17 @@ def execute_compose_update(working_dir: str, container_name: str):
             raise RuntimeError(f"Up failed: {up_res.stderr}")
         return pull_res.stdout + "\n" + up_res.stdout
 
-    # Auto-mount path: execute via ephemeral sibling container
-    my_id = os.environ.get("HOSTNAME")
+    # Slow path: Ephemeral container
+    my_id = None
+    try:
+        with open("/proc/self/cgroup", "r") as f:
+            for line in f:
+                if "docker" in line:
+                    my_id = line.strip().split("/")[-1]
+                    break
+    except Exception:  # noqa: BLE001, S110
+        pass
+
     env = {}
     if "DOCKER_HOST" in os.environ:
         env["DOCKER_HOST"] = os.environ["DOCKER_HOST"]
@@ -64,10 +91,11 @@ def execute_compose_update(working_dir: str, container_name: str):
     if "DOCKER_HOST" not in os.environ:
         volumes["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
 
+    command_str = " ".join(cmd_pull) + " && " + " ".join(cmd_up)
     logs = client.containers.run(
         image="docker:cli",
         entrypoint="sh",
-        command=["-c", "docker compose pull && docker compose up -d --force-recreate"],
+        command=["-c", command_str],
         volumes=volumes,
         working_dir=working_dir,
         environment=env,
