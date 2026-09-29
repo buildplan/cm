@@ -84,8 +84,9 @@ services:
       - ./data:/app/data
       # Map to your local compose directories so compose can recreate containers locally
       - /opt/docker:/opt/docker
-      # Map host docker config for private registries or Docker Hub rate-limit prevention
-      - ~/.docker/config.json:/root/.docker/config.json:ro
+      # To prevent Docker Hub limits or use private registries, use the `auth.registries` section in the UI / config.yml.
+      # Mounting ~/.docker/config.json is optional and often fails on Synology NAS or strict environments:
+      # - ~/.docker/config.json:/root/.docker/config.json:ro
     environment:
       # --- System Configuration ---
       - DOCKER_HOST=tcp://dockerproxy:2375
@@ -104,6 +105,10 @@ services:
       - DISK_SPACE_THRESHOLD=80
       - NETWORK_ERROR_THRESHOLD=10
       - LOG_LINES_TO_CHECK=40
+
+      # --- Global Registry Credentials (Optional fallback) ---
+      - DOCKER_USERNAME=
+      - DOCKER_PASSWORD=
 
       # --- External Health Check ---
       - HEALTHCHECKS_JOB_URL=
