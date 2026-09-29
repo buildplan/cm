@@ -157,6 +157,7 @@ Directly mounting `/var/run/docker.sock` exposes your system to root access vuln
 ### Passkey Authentication (WebAuthn)
 
 You can register biometrics (Windows Hello, FaceID, TouchID) or hardware security keys (YubiKeys) from the settings panel.
+
 1. Log in to the UI with your `SECRET_TOKEN`.
 2. Go to the Settings panel and click **Register Passkey**.
 3. Follow your browser's prompts to save your passkey.
@@ -166,7 +167,29 @@ You can register biometrics (Windows Hello, FaceID, TouchID) or hardware securit
    auth:
      disable_token_auth: true
    ```
+
    *Note: If no passkeys are registered, token auth remains enabled as a safety fallback.*
 
+### Private Registries & Authentication
+
+To avoid rate limits or to access private container images, Container Monitor supports authenticating with Docker registries. You can configure authentication via the UI's YAML editor or directly in `/app/data/config.yml` in the `auth` section:
+
+1. **Per-Registry Credentials (Recommended):**
+
+   ```yaml
+   auth:
+     registries:
+       "ghcr.io":
+         username: "your_user"
+         password: "your_token"
+       "registry.yourdomain.com":
+         username: "admin"
+         password: "password"
+   ```
+
+2. **Global Fallback Credentials:** Set `docker_username` and `docker_password` to authenticate globally if no per-registry credentials match.
+3. **Docker Config File:** Alternatively, mount your host's `~/.docker/config.json` into the container and Container Monitor will automatically parse it for saved credentials.
+
 ### Bounded Log Rotation
-The application monitors its log files and automatically trims them to prevent disk depletion. When `/app/data/container-monitor.log` exceeds 10MB, the file is automatically rotated and truncated to its last 1MB of log history.
+
+The application monitors its log files and automatically trims them to prevent disk depletion. When `/app/data/container-monitor.log` exceeds the configured maximum size (defaults to 5MB via `general.log_max_size_mb` in `config.yml`), the file is automatically rotated and truncated to preserve the most recent history.
