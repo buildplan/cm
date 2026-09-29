@@ -21,11 +21,29 @@ def execute_compose_update(working_dir: str, container_name: str):
     import os
 
     client = docker.from_env()
+    container = client.containers.get(container_name)
+    labels = container.attrs.get("Config", {}).get("Labels", {})
+    project_name = labels.get("com.docker.compose.project")
+    service_name = labels.get("com.docker.compose.service")
+
+    cmd_pull = ["docker", "compose"]
+    if project_name:
+        cmd_pull.extend(["-p", project_name])
+    cmd_pull.append("pull")
+    if service_name:
+        cmd_pull.append(service_name)
+
+    cmd_up = ["docker", "compose"]
+    if project_name:
+        cmd_up.extend(["-p", project_name])
+    cmd_up.extend(["up", "-d", "--force-recreate"])
+    if service_name:
+        cmd_up.append(service_name)
 
     if Path(working_dir).is_dir():
         # Fast path: directory is mounted locally in this container
         pull_res = subprocess.run(
-            ["docker", "compose", "pull"],
+            cmd_pull,
             cwd=working_dir,
             capture_output=True,
             text=True,
@@ -34,7 +52,7 @@ def execute_compose_update(working_dir: str, container_name: str):
         if pull_res.returncode != 0:
             raise RuntimeError(f"Pull failed: {pull_res.stderr}")
         up_res = subprocess.run(
-            ["docker", "compose", "up", "-d", "--force-recreate"],
+            cmd_up,
             cwd=working_dir,
             capture_output=True,
             text=True,
@@ -44,8 +62,17 @@ def execute_compose_update(working_dir: str, container_name: str):
             raise RuntimeError(f"Up failed: {up_res.stderr}")
         return pull_res.stdout + "\n" + up_res.stdout
 
-    # Auto-mount path: execute via ephemeral sibling container
-    my_id = os.environ.get("HOSTNAME")
+    # Slow path: Ephemeral container
+    my_id = None
+    try:
+        with open("/proc/self/cgroup", "r") as f:
+            for line in f:
+                if "docker" in line:
+                    my_id = line.strip().split("/")[-1]
+                    break
+    except Exception:  # noqa: BLE001, S110
+        pass
+
     env = {}
     if "DOCKER_HOST" in os.environ:
         env["DOCKER_HOST"] = os.environ["DOCKER_HOST"]
@@ -64,10 +91,11 @@ def execute_compose_update(working_dir: str, container_name: str):
     if "DOCKER_HOST" not in os.environ:
         volumes["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
 
+    command_str = " ".join(cmd_pull) + " && " + " ".join(cmd_up)
     logs = client.containers.run(
         image="docker:cli",
         entrypoint="sh",
-        command=["-c", "docker compose pull && docker compose up -d --force-recreate"],
+        command=["-c", command_str],
         volumes=volumes,
         working_dir=working_dir,
         environment=env,
@@ -87,8 +115,8 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Pulling latest image: {image_ref}...", "INFO")
     try:
         client.images.pull(image_ref)
-    except MONITOR_EXCEPTIONS as e:
-        log_event(f"[{container_name}] Warning: Failed to pull image: {e}", "WARNING")
+    except Exception as e:  # noqa: BLE001  # noqa: BLE001
+        raise RuntimeError(f"Failed to pull image: {e}")
 
     config = attrs["Config"]
     host_config = attrs["HostConfig"]
@@ -239,7 +267,7 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Stopping old container...", "INFO")
     try:
         container.stop(timeout=15)
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         log_event(
             f"[{container_name}] Stop warning (might already be stopped): {e}", "DEBUG"
         )
@@ -265,14 +293,14 @@ def execute_python_update(container_name: str):
                             f"[{container_name}] Connected to additional network: {net_name}",
                             "DEBUG",
                         )
-                    except MONITOR_EXCEPTIONS as e:
+                    except Exception as e:  # noqa: BLE001
                         log_event(
                             f"[{container_name}] Failed to connect to network {net_name}: {e}",
                             "WARNING",
                         )
 
         return f"Successfully recreated {container_name} via native Python SDK."
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:
         log_event(f"[{container_name}] Recreation failed: {e}", "ERROR")
         raise
 
@@ -287,7 +315,7 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 with open(CONFIG_F, "r") as f:
                     cfg = yaml.safe_load(f) or {}
                     lines = int(cfg.get("general", {}).get("log_lines_to_check", 20))
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
         logs = container.logs(tail=lines).decode("utf-8", errors="replace")
         if filter_str:
@@ -296,27 +324,69 @@ def get_container_logs(container_name: str, filter_str: str = "") -> str:
                 [line for line in logs.splitlines() if pattern.search(line)]
             )
         return logs
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         return f"Error fetching logs: {e}"
 
 
-def get_docker_auth(registry):
+def get_docker_auth(registry, auth_cfg=None):
+    if auth_cfg is None:
+        auth_cfg = {}
+
+    import base64
     import json
 
-    paths = [Path("/root/.docker/config.json"), Path.home() / ".docker" / "config.json"]
-    config_path = next((p for p in paths if p.exists()), None)
+    # 1. Check per-registry credentials in config
+    registries = auth_cfg.get("registries", {})
+    if registry in registries:
+        user = registries[registry].get("username", "")
+        pwd = registries[registry].get("password", "")
+        if user and pwd:
+            auth_bytes = f"{user}:{pwd}".encode()
+            return f"Basic {base64.b64encode(auth_bytes).decode('utf-8')}"
+
+    check_regs = [registry]
+    if registry == "registry-1.docker.io":
+        check_regs.extend(
+            ["https://index.docker.io/v1/", "docker.io", "index.docker.io"]
+        )
+
+    for check_reg in check_regs:
+        if check_reg in registries:
+            user = registries[check_reg].get("username", "")
+            pwd = registries[check_reg].get("password", "")
+            if user and pwd:
+                auth_bytes = f"{user}:{pwd}".encode()
+                return f"Basic {base64.b64encode(auth_bytes).decode('utf-8')}"
+
+    # 2. Check global fallback in config
+    global_user = auth_cfg.get("docker_username", "")
+    global_pwd = auth_cfg.get("docker_password", "")
+    if global_user and global_pwd:
+        auth_bytes = f"{global_user}:{global_pwd}".encode()
+        return f"Basic {base64.b64encode(auth_bytes).decode('utf-8')}"
+
+    # 3. Check docker config file
+    config_path_str = auth_cfg.get("docker_config_path", "~/.docker/config.json")
+    config_path = None
+    if config_path_str:
+        config_path = Path(config_path_str).expanduser()
+        if not config_path.exists():
+            config_path = None
+
+    if not config_path:
+        paths = [
+            Path("/root/.docker/config.json"),
+            Path.home() / ".docker" / "config.json",
+        ]
+        config_path = next((p for p in paths if p.exists()), None)
+
     if not config_path:
         return None
+
     try:
         with open(config_path, "r") as f:
             cfg = json.load(f)
             auths = cfg.get("auths", {})
-
-            check_regs = [registry]
-            if registry == "registry-1.docker.io":
-                check_regs.extend(
-                    ["https://index.docker.io/v1/", "docker.io", "index.docker.io"]
-                )
 
             for reg, auth_data in auths.items():
                 for check_reg in check_regs:
@@ -324,12 +394,12 @@ def get_docker_auth(registry):
                         auth = auth_data.get("auth")
                         if auth:
                             return f"Basic {auth}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001  # noqa: BLE001  # noqa: BLE001
         log_event(f"Failed to read docker config: {e}", "WARNING")
     return None
 
 
-def get_registry_tags(image_name):
+def get_registry_tags(image_name, auth_cfg=None):
     if ":" in image_name:
         image_name = image_name.split(":")[0]
     registry = "registry-1.docker.io"
@@ -343,7 +413,7 @@ def get_registry_tags(image_name):
         repo = f"library/{image_name}"
     url = f"https://{registry}/v2/"
     try:
-        basic_auth = get_docker_auth(registry)
+        basic_auth = get_docker_auth(registry, auth_cfg)
         headers = {}
         if basic_auth:
             headers["Authorization"] = basic_auth
@@ -372,12 +442,12 @@ def get_registry_tags(image_name):
         resp = httpx.get(tags_url, headers=req_headers, timeout=10)
         if resp.status_code == 200:
             return resp.json().get("tags", [])
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
     return []
 
 
-def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
+def get_remote_digests(image_ref, architecture="amd64", os_name="linux", auth_cfg=None):
     if ":" in image_ref:
         image_name, tag = image_ref.rsplit(":", 1)
     else:
@@ -395,7 +465,7 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
     url = f"https://{registry}/v2/"
     digests = set()
     try:
-        basic_auth = get_docker_auth(registry)
+        basic_auth = get_docker_auth(registry, auth_cfg)
         headers = {}
         if basic_auth:
             headers["Authorization"] = basic_auth
@@ -439,7 +509,7 @@ def get_remote_digests(image_ref, architecture="amd64", os_name="linux"):
                         and plat.get("os") == os_name
                     ) and m.get("digest"):
                         digests.add(m.get("digest"))
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Ignored error: {e}")
     return list(digests)
 
@@ -478,7 +548,7 @@ class Monitor:
                 self.config = yaml.safe_load(f) or {}
         try:
             self.client = docker.from_env()
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             self.client = None
             log_event(f"Docker connection failed: {e}", "ERROR")
 
@@ -501,7 +571,7 @@ class Monitor:
             self.state_mgr.update(self.state)
             if self.on_update:
                 self.on_update("state_changed", self.state)
-        except MONITOR_EXCEPTIONS as e:
+        except Exception as e:  # noqa: BLE001
             log_event(f"Failed to save state: {e}", "ERROR")
 
     def run(self):
@@ -519,7 +589,7 @@ class Monitor:
         if hc_url:
             try:
                 httpx.get(f"{hc_url.rstrip('/')}/start", timeout=5)
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
         containers = self.client.containers.list(all=True)
@@ -603,7 +673,7 @@ class Monitor:
                     log_event(
                         f"[{name}] Memory usage high: {mem_percent:.1f}%", "WARNING"
                     )
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
             # Disk Space
@@ -659,7 +729,7 @@ class Monitor:
                                 f"[{name}] Network issues: {errors} errors/drops on {iface}",
                                 "WARNING",
                             )
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
 
             # Logs
@@ -687,7 +757,7 @@ class Monitor:
                 if has_error:
                     issues.append("Logs: Errors detected")
                     log_event(f"[{name}] Log errors detected.", "WARNING")
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
             # Updates
@@ -735,7 +805,9 @@ class Monitor:
                                 f"[{name}] Checking remote tags for {image_ref} (Strategy: {strategy})",
                                 "DEBUG",
                             )
-                            tags = get_registry_tags(image_ref)
+                            tags = get_registry_tags(
+                                image_ref, self.config.get("auth", {})
+                            )
                             latest = get_latest_tag(tags, current_tag, strategy)
                             if (
                                 latest
@@ -779,7 +851,9 @@ class Monitor:
                                 "DEBUG",
                             )
                             local_arch = c.image.attrs.get("Architecture", "amd64")
-                            local_os = c.image.attrs.get("Os", "linux")
+                            local_os = self.config.get("general", {}).get(
+                                "os_override"
+                            ) or c.image.attrs.get("Os", "linux")
 
                             local_digests = []
                             repo_digests = c.image.attrs.get("RepoDigests", [])
@@ -801,7 +875,10 @@ class Monitor:
                                 remote_digests.append(remote_digest)
 
                             http_digests = get_remote_digests(
-                                image_ref, local_arch, local_os
+                                image_ref,
+                                local_arch,
+                                local_os,
+                                self.config.get("auth", {}),
                             )
                             if http_digests:
                                 remote_digests.extend(http_digests)
@@ -846,7 +923,7 @@ class Monitor:
                                         "timestamp": int(time.time()),
                                     },
                                 }
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
             if issues:
@@ -894,7 +971,7 @@ class Monitor:
                         try:
                             execute_compose_update(wdir, au_name)
                             log_event(f"Successfully auto-updated {au_name}", "GOOD")
-                        except MONITOR_EXCEPTIONS as e:
+                        except Exception as e:  # noqa: BLE001
                             log_event(
                                 f"Compose auto-update failed for {au_name}: {e}. Falling back to native SDK update.",
                                 "WARNING",
@@ -907,7 +984,7 @@ class Monitor:
                             f"Successfully auto-updated {au_name} using native Python SDK",
                             "GOOD",
                         )
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     log_event(f"Failed to auto-update {au_name}: {e}", "ERROR")
 
         if hc_url:
@@ -930,7 +1007,7 @@ class Monitor:
                     httpx.post(f"{hc_url.rstrip('/')}/fail", data=msg, timeout=5)
                 else:
                     httpx.post(f"{hc_url.rstrip('/')}", data="OK", timeout=5)
-            except MONITOR_EXCEPTIONS as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Ignored error: {e}")
 
         if issues_found:
@@ -967,7 +1044,7 @@ class Monitor:
                             ],
                         },
                     )
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
         elif channel == "ntfy":
             url = self.config.get("notifications", {}).get("ntfy", {}).get("server_url")
@@ -981,7 +1058,7 @@ class Monitor:
                     headers["Authorization"] = f"Bearer {token}"
                 try:
                     httpx.post(f"{url}/{topic}", headers=headers, content=msg)
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")
         elif channel == "generic":
             url = (
@@ -992,5 +1069,5 @@ class Monitor:
             if url:
                 try:
                     httpx.post(url, json={"text": f"{title}: {msg}"})
-                except MONITOR_EXCEPTIONS as e:
+                except Exception as e:  # noqa: BLE001
                     print(f"Ignored error: {e}")

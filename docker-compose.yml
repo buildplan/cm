@@ -8,8 +8,9 @@ services:
       - "9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # Docker API
-      # Prevent Docker Hub limits and for private registries, log in on the host system with `docker login`
-      - ~/.docker/config.json:/root/.docker/config.json:ro
+      # To prevent Docker Hub limits or use private registries, use the `auth.registries` section in the UI / config.yml.
+      # Mounting ~/.docker/config.json is optional and often fails on Synology NAS or strict environments:
+      # - ~/.docker/config.json:/root/.docker/config.json:ro
       - /:/hostfs:ro  # Host disk stats
       - ./data:/app/data  # Persistence
       # CRITICAL: Map your compose directories exactly as they exist on the host
@@ -34,6 +35,10 @@ services:
       - CPU_WARNING_THRESHOLD=80
       - MEMORY_WARNING_THRESHOLD=80
       - DISK_SPACE_THRESHOLD=80
+
+      # Global Registry Credentials (Optional fallback for all update checks)
+      - DOCKER_USERNAME=
+      - DOCKER_PASSWORD=
 
       # Healthchecks.io
       - HEALTHCHECKS_JOB_URL=
