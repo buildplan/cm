@@ -33,7 +33,12 @@ from webauthn.helpers.structs import (
 from backend.config import AppConfig
 from backend.monitor import Monitor, get_container_logs
 from backend.state import StateManager
-from backend.utils import MONITOR_EXCEPTIONS, log_event, set_log_max_size
+from backend.utils import (
+    MONITOR_EXCEPTIONS,
+    log_event,
+    set_log_max_size,
+    setup_docker_config,
+)
 
 
 class ConfigUpdate(BaseModel):
@@ -507,6 +512,7 @@ async def startup():
         cfg = await asyncio.to_thread(_read_cfg)
         interval_mins = int(cfg.get("general", {}).get("monitor_interval_minutes", 360))
         set_log_max_size(int(cfg.get("general", {}).get("log_max_size_mb", 5)))
+        setup_docker_config(cfg.get("auth", {}))
     except MONITOR_EXCEPTIONS:
         interval_mins = 360
 
@@ -884,6 +890,7 @@ async def update_config(request: Request):
             parsed_yaml.get("general", {}).get("monitor_interval_minutes", 360)
         )
         set_log_max_size(int(parsed_yaml.get("general", {}).get("log_max_size_mb", 5)))
+        setup_docker_config(parsed_yaml.get("auth", {}))
         scheduler.reschedule_job(
             "monitor", trigger=IntervalTrigger(minutes=new_interval)
         )
@@ -892,7 +899,7 @@ async def update_config(request: Request):
             "API",
         )
         return {"status": "saved"}
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -910,6 +917,7 @@ async def update_config_json(request: Request):
 
         new_interval = int(data.get("general", {}).get("monitor_interval_minutes", 360))
         set_log_max_size(int(data.get("general", {}).get("log_max_size_mb", 5)))
+        setup_docker_config(data.get("auth", {}))
         scheduler.reschedule_job(
             "monitor", trigger=IntervalTrigger(minutes=new_interval)
         )
@@ -918,7 +926,7 @@ async def update_config_json(request: Request):
             "API",
         )
         return {"status": "saved"}
-    except MONITOR_EXCEPTIONS as e:
+    except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(e))
 
 

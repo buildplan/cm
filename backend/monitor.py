@@ -87,8 +87,8 @@ def execute_python_update(container_name: str):
     log_event(f"[{container_name}] Pulling latest image: {image_ref}...", "INFO")
     try:
         client.images.pull(image_ref)
-    except MONITOR_EXCEPTIONS as e:
-        log_event(f"[{container_name}] Warning: Failed to pull image: {e}", "WARNING")
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Failed to pull image: {e}")
 
     config = attrs["Config"]
     host_config = attrs["HostConfig"]
@@ -366,7 +366,7 @@ def get_docker_auth(registry, auth_cfg=None):
                         auth = auth_data.get("auth")
                         if auth:
                             return f"Basic {auth}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001  # noqa: BLE001
         log_event(f"Failed to read docker config: {e}", "WARNING")
     return None
 
