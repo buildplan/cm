@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/app/data"))
@@ -24,7 +24,7 @@ def set_log_max_size(mb: int):
 
 
 def log_event(msg: str, level="INFO"):
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"{timestamp} [{level}] {msg}\n"
     try:
         if (
