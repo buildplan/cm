@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.15'
       - name: Install dependencies
@@ -53,9 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Lint Workflows (Actionlint)
-        uses: reviewdog/action-actionlint@v1.80.2
+        uses: reviewdog/action-actionlint@v1.80.4
       - name: Setup Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: '3.15'
       - name: Lint YAML
