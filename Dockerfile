@@ -1,5 +1,5 @@
 # 1: Builder Stage
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS builder
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -26,7 +26,7 @@ RUN pip3 uninstall -y pip setuptools \
     && find /opt/venv -type f -name "*.pyo" -delete
 
 # 1.5: Frontend Asset Builder (Tailwind CSS + Chart.js)
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS frontend
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS frontend
 
 ARG TARGETARCH
 
@@ -56,13 +56,13 @@ RUN sed -i "s/const APP_VERSION = .*/const APP_VERSION = \"${APP_VERSION}\";/" .
     && /tmp/tailwindcss -i ./frontend/app.css -o ./frontend/styles.css --minify
 
 # renovate: datasource=npm depName=chart.js
-ARG CHARTJS_VERSION=4.5.1
+ARG CHARTJS_VERSION=4.6.1
 
 # hadolint ignore=DL3059
 RUN wget -q -O ./frontend/chart.umd.min.js "https://cdn.jsdelivr.net/npm/chart.js@${CHARTJS_VERSION}/dist/chart.umd.min.js"
 
 # 2: Final Image
-FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
