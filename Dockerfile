@@ -31,7 +31,7 @@ FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c03
 ARG TARGETARCH
 
 # renovate: datasource=github-releases depName=tailwindlabs/tailwindcss
-ARG TAILWIND_VERSION=v4.3.4
+ARG TAILWIND_VERSION=v4.3.5
 
 # hadolint ignore=DL3018,DL3059
 RUN apk add --no-cache wget ca-certificates libstdc++ libgcc
