@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Lint Workflows (Actionlint)
-        uses: reviewdog/action-actionlint@v1.81.2
+        uses: reviewdog/action-actionlint@v1.84.0
       - name: Setup Python
         uses: actions/setup-python@v7.1.0
         with:
