@@ -56,7 +56,7 @@ RUN sed -i "s/const APP_VERSION = .*/const APP_VERSION = \"${APP_VERSION}\";/" .
     && /tmp/tailwindcss -i ./frontend/app.css -o ./frontend/styles.css --minify
 
 # renovate: datasource=npm depName=chart.js
-ARG CHARTJS_VERSION=4.6.1
+ARG CHARTJS_VERSION=4.6.2
 
 # hadolint ignore=DL3059
 RUN wget -q -O ./frontend/chart.umd.min.js "https://cdn.jsdelivr.net/npm/chart.js@${CHARTJS_VERSION}/dist/chart.umd.min.js"
